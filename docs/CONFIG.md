@@ -19,7 +19,7 @@
 | `LLM_MODEL` | `gpt-4o-mini` | 需求采集模型 |
 | `IMAGE_BASE_URL` | 使用 `LLM_BASE_URL` | 图片生成 API 地址 |
 | `IMAGE_API_KEY` | 使用 `LLM_API_KEY` | 图片生成 API 密钥 |
-| `IMAGE_MODEL` | `gpt-image-1` | 图片生成模型 |
+| `IMAGE_MODEL` | `gpt-image-1` | 图片生成模型；以 Provider `/models` 返回的可用模型为准，当前验证使用 `gpt-image-1.5` |
 | `AUTH_SECRET` | 本地开发默认值 | HMAC Token 签名密钥，生产环境必须替换 |
 | `AUTH_TTL_HOURS` | `24` | 登录 Token 有效期（小时） |
 
@@ -41,12 +41,12 @@ parseTime=true&charset=utf8mb4
 
 这样 MySQL 的 `DATETIME(3)` 才能正确扫描为 Go 的 `time.Time`。
 
-启动前需要 Redis 可连接，并设置 LLM：
+启动前需要 Redis 可连接，并在项目根目录 `.env` 中设置真实 LLM 和图片 Provider。应用会自动加载这个文件：
 
 ```bash
-export REDIS_ADDR='127.0.0.1:6379'
-export LLM_API_KEY='your-api-key'
-export LLM_MODEL='gpt-4o-mini'
+cp .env.example .env
+# 编辑 .env，填写 LLM_API_KEY、IMAGE_API_KEY、AUTH_SECRET
+./scripts/start.sh
 ```
 
 Docker Compose 使用 `mysql` 和 `redis` 作为服务名；`docker-compose.e2e.yml` 会覆盖 LLM 地址，使用本地 Mock LLM，不消耗真实模型额度。
