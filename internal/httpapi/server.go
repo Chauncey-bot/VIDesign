@@ -145,7 +145,7 @@ func (s *Server) projectRoutes(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if req.ProposalCount == 0 {
-			req.ProposalCount = 3
+			req.ProposalCount = 9
 		}
 		task := taskqueue.Task{ID: repository.NewID(), Kind: workflow.GenerateTask, ProjectID: projectID, Payload: map[string]any{"proposal_count": req.ProposalCount}}
 		if err := s.queue.Submit(r.Context(), task); err != nil {

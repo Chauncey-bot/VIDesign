@@ -231,7 +231,7 @@ file reference-image.bin
 curl -fsS -X POST "$BASE/api/v1/projects/$PROJECT_ID/generate" \
   -H "Authorization: Bearer $TOKEN" \
   -H 'Content-Type: application/json' \
-  --data '{"proposal_count":3}'
+  --data '{"proposal_count":9}'
 ```
 
 生成过程会依次调用真实 LLM 方案 Agent 和图片 Provider。图片生成可能需要几十秒，不能只看到 `queued` 就判定失败。完成后检查：
@@ -240,6 +240,8 @@ curl -fsS -X POST "$BASE/api/v1/projects/$PROJECT_ID/generate" \
 curl -fsS "$BASE/api/v1/projects/$PROJECT_ID/proposals" \
   -H "Authorization: Bearer $TOKEN" | jq 'map({id,round,title,assets:(.assets|length)})'
 ```
+
+前端默认生成 9 套第一轮方案。方案卡片支持勾选，点击“批量下载图片”会按选择逐张下载；如果浏览器提示允许多个下载，请选择允许。
 
 ### 5.4 提交反馈并生成二轮
 

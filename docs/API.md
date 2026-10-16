@@ -98,7 +98,7 @@ PATCH 示例：
 `POST /projects/{project_id}/generate`
 
 ```json
-{"proposal_count":3,"reference_asset_ids":[]}
+{"proposal_count":9,"reference_asset_ids":[]}
 ```
 
 响应 `202`：返回任务 ID。任务完成后生成 3 套 `DesignProposal`。
