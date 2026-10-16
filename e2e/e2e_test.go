@@ -110,7 +110,7 @@ func TestProjectChatPersistsBrief(t *testing.T) {
 	var revisionTask struct {
 		TaskID string `json:"task_id"`
 	}
-	requestJSON(t, client, http.MethodPost, baseURL+"/api/v1/projects/"+project.ID+"/revision", map[string]any{"selected_proposal_id": proposalID, "feedback": map[string]any{"rating": 4, "comment": "减少插画复杂度并突出低糖卖点"}, "preserve": []string{"主色"}}, &revisionTask)
+	requestMultipartRevision(t, client, baseURL+"/api/v1/projects/"+project.ID+"/revision", proposalID, map[string]any{"rating": 4, "comment": "减少插画复杂度并突出低糖卖点"}, []namedFile{{name: "feedback-reference.png", data: []byte{1, 2, 3}}}, &revisionTask)
 	pollSucceeded(t, client, baseURL, revisionTask.TaskID)
 	requestJSON(t, client, http.MethodGet, baseURL+"/api/v1/projects/"+project.ID+"/proposals?round=2", nil, &proposals)
 	if len(proposals) != 1 || proposals[0].Round != 2 || len(proposals[0].Assets) == 0 {
@@ -260,6 +260,46 @@ func requestMultipartFiles(t *testing.T, client *http.Client, url, message strin
 	data, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		t.Fatalf("multipart status=%d body=%s", resp.StatusCode, data)
+	}
+	if out != nil {
+		if err := json.Unmarshal(data, out); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func requestMultipartRevision(t *testing.T, client *http.Client, url, proposalID string, feedback map[string]any, references []namedFile, out any) {
+	t.Helper()
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	_ = writer.WriteField("selected_proposal_id", proposalID)
+	feedbackData, _ := json.Marshal(feedback)
+	_ = writer.WriteField("feedback", string(feedbackData))
+	_ = writer.WriteField("preserve", `[]`)
+	for _, reference := range references {
+		part, err := writer.CreateFormFile("reference_file", reference.name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, _ = part.Write(reference.data)
+	}
+	_ = writer.Close()
+	req, err := http.NewRequest(http.MethodPost, url, &body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	if token := os.Getenv("E2E_TOKEN"); token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	data, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		t.Fatalf("revision multipart status=%d body=%s", resp.StatusCode, data)
 	}
 	if out != nil {
 		if err := json.Unmarshal(data, out); err != nil {

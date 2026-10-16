@@ -118,7 +118,29 @@ func (w *DesignWorkflow) revise(ctx context.Context, task taskqueue.Task) error 
 	selectedForAgent.ImageAssetIDs = nil
 	feedback, _ := task.Payload["feedback"].(map[string]any)
 	preserve, _ := task.Payload["preserve"].([]any)
-	run, err := w.revision.Run(ctx, agent.RunInput{ProjectID: task.ProjectID, Round: project.CurrentRound + 1, Payload: map[string]any{"brief": brief, "proposal": selectedForAgent, "feedback": feedback, "preserve": preserve}})
+	revisionPayload := map[string]any{"brief": brief, "proposal": selectedForAgent, "feedback": feedback, "preserve": preserve}
+	if ids, ok := task.Payload["reference_asset_ids"].([]any); ok {
+		assetIDs := make([]string, 0, len(ids))
+		for _, id := range ids {
+			if value, ok := id.(string); ok {
+				assetIDs = append(assetIDs, value)
+			}
+		}
+		assets, err := w.repo.GetAssets(ctx, assetIDs)
+		if err != nil {
+			return err
+		}
+		references := make([]map[string]any, 0, len(assets))
+		for _, asset := range assets {
+			reference := map[string]any{"name": asset.Prompt, "type": asset.Model}
+			if strings.HasPrefix(asset.StorageURL, "data:image/") {
+				reference["storage_url"] = asset.StorageURL
+			}
+			references = append(references, reference)
+		}
+		revisionPayload["reference_assets"] = references
+	}
+	run, err := w.revision.Run(ctx, agent.RunInput{ProjectID: task.ProjectID, Round: project.CurrentRound + 1, Payload: revisionPayload})
 	if err != nil {
 		return err
 	}

@@ -165,11 +165,44 @@ func (s *Server) projectRoutes(w http.ResponseWriter, r *http.Request) {
 			Feedback           map[string]any `json:"feedback"`
 			Preserve           []string       `json:"preserve"`
 		}
-		if err := decodeBody(r, &req); err != nil || strings.TrimSpace(req.SelectedProposalID) == "" {
+		var referenceAssetIDs []string
+		if strings.HasPrefix(r.Header.Get("Content-Type"), "multipart/form-data") {
+			if err := r.ParseMultipartForm(20 << 20); err != nil {
+				writeError(w, http.StatusBadRequest, "invalid revision request")
+				return
+			}
+			req.SelectedProposalID = r.FormValue("selected_proposal_id")
+			if value := r.FormValue("feedback"); value != "" {
+				if err := json.Unmarshal([]byte(value), &req.Feedback); err != nil {
+					writeError(w, http.StatusBadRequest, "invalid feedback")
+					return
+				}
+			}
+			if value := r.FormValue("preserve"); value != "" {
+				if err := json.Unmarshal([]byte(value), &req.Preserve); err != nil {
+					writeError(w, http.StatusBadRequest, "invalid preserve")
+					return
+				}
+			}
+			var err error
+			referenceAssetIDs, err = s.parseReferenceAssets(r, projectID)
+			if err != nil {
+				writeError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+		} else if err := decodeBody(r, &req); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid revision request")
+			return
+		}
+		if strings.TrimSpace(req.SelectedProposalID) == "" {
 			writeError(w, http.StatusBadRequest, "selected_proposal_id is required")
 			return
 		}
-		task := taskqueue.Task{ID: repository.NewID(), Kind: workflow.RevisionTask, ProjectID: projectID, Payload: map[string]any{"selected_proposal_id": req.SelectedProposalID, "feedback": req.Feedback, "preserve": req.Preserve}}
+		payload := map[string]any{"selected_proposal_id": req.SelectedProposalID, "feedback": req.Feedback, "preserve": req.Preserve}
+		if len(referenceAssetIDs) > 0 {
+			payload["reference_asset_ids"] = referenceAssetIDs
+		}
+		task := taskqueue.Task{ID: repository.NewID(), Kind: workflow.RevisionTask, ProjectID: projectID, Payload: payload}
 		if err := s.queue.Submit(r.Context(), task); err != nil {
 			writeError(w, http.StatusServiceUnavailable, "task_queue_unavailable")
 			return
@@ -284,6 +317,48 @@ func (s *Server) parseBrandAsset(r *http.Request, projectID string) ([]string, e
 			mimeType = "application/octet-stream"
 		}
 		asset := domain.Asset{ID: repository.NewID(), ProjectID: projectID, AssetType: "brand_source_file", StorageURL: "data:" + mimeType + ";base64," + base64.StdEncoding.EncodeToString(data), Prompt: name, Provider: "customer-upload", Model: ext, Version: 1}
+		if err := s.repo.CreateAsset(r.Context(), asset); err != nil {
+			return nil, err
+		}
+		assetIDs = append(assetIDs, asset.ID)
+	}
+	return assetIDs, nil
+}
+
+func (s *Server) parseReferenceAssets(r *http.Request, projectID string) ([]string, error) {
+	files := r.MultipartForm.File["reference_file"]
+	assetIDs := make([]string, 0, len(files))
+	for _, header := range files {
+		name := strings.TrimSpace(header.Filename)
+		dot := strings.LastIndex(name, ".")
+		if dot < 0 {
+			return nil, fmt.Errorf("reference_file must have an extension")
+		}
+		ext := strings.ToLower(name[dot:])
+		allowed := map[string]bool{".docx": true, ".pdf": true, ".png": true, ".jpg": true, ".jpeg": true, ".webp": true, ".ai": true, ".eps": true, ".svg": true}
+		if !allowed[ext] {
+			return nil, fmt.Errorf("unsupported reference file: %s", ext)
+		}
+		file, err := header.Open()
+		if err != nil {
+			return nil, err
+		}
+		data, readErr := io.ReadAll(io.LimitReader(file, 20<<20))
+		_ = file.Close()
+		if readErr != nil {
+			return nil, readErr
+		}
+		prompt := name
+		if ext == ".docx" {
+			if document, parseErr := docx.Parse(data); parseErr == nil && strings.TrimSpace(document.Text) != "" {
+				prompt += "\n" + document.Text
+			}
+		}
+		mimeType := mime.TypeByExtension(ext)
+		if mimeType == "" {
+			mimeType = "application/octet-stream"
+		}
+		asset := domain.Asset{ID: repository.NewID(), ProjectID: projectID, AssetType: "feedback_reference_file", StorageURL: "data:" + mimeType + ";base64," + base64.StdEncoding.EncodeToString(data), Prompt: prompt, Provider: "customer-upload", Model: ext, Version: 1}
 		if err := s.repo.CreateAsset(r.Context(), asset); err != nil {
 			return nil, err
 		}
