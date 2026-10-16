@@ -14,7 +14,10 @@ func CanTransition(from, to ProjectStatus) bool {
 	case ProjectCollecting:
 		return to == ProjectBriefReady || to == ProjectCollecting
 	case ProjectBriefReady:
-		return to == ProjectGenerating
+		// A client may continue the guided intake after an early pass reaches
+		// the readiness threshold. Allow the workflow to collect the next step
+		// and promote it back to brief_ready once the new snapshot is scored.
+		return to == ProjectCollecting || to == ProjectGenerating
 	case ProjectGenerating:
 		return to == ProjectAwaitFeedback
 	case ProjectAwaitFeedback:
