@@ -63,7 +63,15 @@
         </nav>
 
         <section id="tab-intake" class="tab-panel active">
-          <div class="intake-grid">
+          <div id="researchWizard" class="research-wizard card">
+            <div class="wizard-header"><div><div class="eyebrow">第一轮需求调研</div><h2 id="researchStepTitle">产品与品牌</h2></div><span id="researchStepCount">第 1 / 4 步</span></div>
+            <div class="wizard-steps" id="researchSteps"></div>
+            <div id="researchQuestions" class="research-questions"></div>
+            <textarea id="researchAnswer" rows="5" placeholder="请尽量完整填写，Word 文档可在第一步上传"></textarea>
+            <div id="researchUpload" class="research-upload"><label for="researchDocumentInput">＋ 上传 Word 需求文档</label><input id="researchDocumentInput" type="file" accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document"><span id="researchDocumentName"></span></div>
+            <div class="wizard-footer"><span id="researchProgressText" class="muted">每一步提交后，Agent 会整理并保存 Brief。</span><button id="researchNextBtn" class="primary" type="button">提交本步并继续 <span>→</span></button></div>
+          </div>
+          <div class="intake-grid legacy-intake">
             <div class="chat-card card">
               <div class="card-header"><div><div class="eyebrow">AI 需求采集</div><h2>把你的想法告诉我</h2></div><span class="live-label"><i></i> Agent 在线</span></div>
               <div id="chatMessages" class="chat-messages"><div class="message agent"><div class="avatar">P</div><div><div class="message-author">Packaging AI</div><p>你好！先告诉我产品是什么、准备卖给谁，以及你希望包装传达什么感觉。</p></div></div></div>
