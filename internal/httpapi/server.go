@@ -215,22 +215,30 @@ func (s *Server) parseChatRequest(r *http.Request, projectID string) (string, st
 	message := r.FormValue("message")
 	var documentText string
 	assetIDs := []string{}
-	file, header, err := r.FormFile("document")
-	if err == nil {
-		defer file.Close()
+	documentFiles := r.MultipartForm.File["document"]
+	for index, header := range documentFiles {
 		if !strings.HasSuffix(strings.ToLower(header.Filename), ".docx") {
 			return "", "", nil, nil, fmt.Errorf("only .docx is supported in document field")
 		}
-		data, err := io.ReadAll(io.LimitReader(file, 20<<20))
+		file, err := header.Open()
 		if err != nil {
 			return "", "", nil, nil, err
+		}
+		data, readErr := io.ReadAll(io.LimitReader(file, 20<<20))
+		_ = file.Close()
+		if readErr != nil {
+			return "", "", nil, nil, readErr
 		}
 		document, err := docx.Parse(data)
 		if err != nil {
 			return "", "", nil, nil, err
 		}
-		documentText = document.Text
-		assetIDs = make([]string, 0, len(document.Images))
+		if text := strings.TrimSpace(document.Text); text != "" {
+			if documentText != "" {
+				documentText += "\n\n"
+			}
+			documentText += fmt.Sprintf("【需求文档 %d：%s】\n%s", index+1, header.Filename, text)
+		}
 		for _, image := range document.Images {
 			asset := domain.Asset{ID: repository.NewID(), ProjectID: projectID, AssetType: "brief_reference_image", StorageURL: image.DataURL, Prompt: image.Name, Provider: "docx-upload", Version: 1}
 			if err := s.repo.CreateAsset(r.Context(), asset); err != nil {
@@ -238,8 +246,6 @@ func (s *Server) parseChatRequest(r *http.Request, projectID string) (string, st
 			}
 			assetIDs = append(assetIDs, asset.ID)
 		}
-	} else if !errors.Is(err, http.ErrMissingFile) {
-		return "", "", nil, nil, err
 	}
 	brandAssetIDs, err := s.parseBrandAsset(r, projectID)
 	if err != nil {
@@ -249,36 +255,41 @@ func (s *Server) parseChatRequest(r *http.Request, projectID string) (string, st
 }
 
 func (s *Server) parseBrandAsset(r *http.Request, projectID string) ([]string, error) {
-	file, header, err := r.FormFile("brand_file")
-	if errors.Is(err, http.ErrMissingFile) {
+	brandFiles := r.MultipartForm.File["brand_file"]
+	if len(brandFiles) == 0 {
 		return nil, nil
 	}
-	if err != nil {
-		return nil, err
+	assetIDs := make([]string, 0, len(brandFiles))
+	for _, header := range brandFiles {
+		name := strings.TrimSpace(header.Filename)
+		dot := strings.LastIndex(name, ".")
+		if dot < 0 {
+			return nil, fmt.Errorf("brand_file must be .ai, .eps or .svg")
+		}
+		ext := strings.ToLower(name[dot:])
+		if ext != ".ai" && ext != ".eps" && ext != ".svg" {
+			return nil, fmt.Errorf("brand_file must be .ai, .eps or .svg")
+		}
+		file, err := header.Open()
+		if err != nil {
+			return nil, err
+		}
+		data, readErr := io.ReadAll(io.LimitReader(file, 20<<20))
+		_ = file.Close()
+		if readErr != nil {
+			return nil, readErr
+		}
+		mimeType := mime.TypeByExtension(ext)
+		if mimeType == "" {
+			mimeType = "application/octet-stream"
+		}
+		asset := domain.Asset{ID: repository.NewID(), ProjectID: projectID, AssetType: "brand_source_file", StorageURL: "data:" + mimeType + ";base64," + base64.StdEncoding.EncodeToString(data), Prompt: name, Provider: "customer-upload", Model: ext, Version: 1}
+		if err := s.repo.CreateAsset(r.Context(), asset); err != nil {
+			return nil, err
+		}
+		assetIDs = append(assetIDs, asset.ID)
 	}
-	defer file.Close()
-	name := strings.TrimSpace(header.Filename)
-	dot := strings.LastIndex(name, ".")
-	if dot < 0 {
-		return nil, fmt.Errorf("brand_file must be .ai, .eps or .svg")
-	}
-	ext := strings.ToLower(name[dot:])
-	if ext != ".ai" && ext != ".eps" && ext != ".svg" {
-		return nil, fmt.Errorf("brand_file must be .ai, .eps or .svg")
-	}
-	data, err := io.ReadAll(io.LimitReader(file, 20<<20))
-	if err != nil {
-		return nil, err
-	}
-	mimeType := mime.TypeByExtension(ext)
-	if mimeType == "" {
-		mimeType = "application/octet-stream"
-	}
-	asset := domain.Asset{ID: repository.NewID(), ProjectID: projectID, AssetType: "brand_source_file", StorageURL: "data:" + mimeType + ";base64," + base64.StdEncoding.EncodeToString(data), Prompt: name, Provider: "customer-upload", Model: ext, Version: 1}
-	if err := s.repo.CreateAsset(r.Context(), asset); err != nil {
-		return nil, err
-	}
-	return []string{asset.ID}, nil
+	return assetIDs, nil
 }
 
 func (s *Server) register(w http.ResponseWriter, r *http.Request) {

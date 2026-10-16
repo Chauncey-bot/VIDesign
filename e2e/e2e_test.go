@@ -52,7 +52,7 @@ func TestProjectChatPersistsBrief(t *testing.T) {
 	var task struct {
 		TaskID string `json:"task_id"`
 	}
-	requestMultipart(t, client, baseURL+"/api/v1/projects/"+project.ID+"/chat", "做一套年轻人红茶礼盒包装", makeDocx(t), &task)
+	requestMultipartFiles(t, client, baseURL+"/api/v1/projects/"+project.ID+"/chat", "做一套年轻人红茶礼盒包装", [][]byte{makeDocx(t), makeDocx(t)}, []namedFile{{name: "brand-one.ai", data: []byte("AI-ONE")}, {name: "brand-two.svg", data: []byte("<svg></svg>")}}, &task)
 	if task.TaskID == "" {
 		t.Fatal("task id is empty")
 	}
@@ -212,15 +212,33 @@ func requestBytes(t *testing.T, client *http.Client, method, url string) []byte 
 }
 
 func requestMultipart(t *testing.T, client *http.Client, url, message string, document []byte, out any) {
+	requestMultipartFiles(t, client, url, message, [][]byte{document}, nil, out)
+}
+
+type namedFile struct {
+	name string
+	data []byte
+}
+
+func requestMultipartFiles(t *testing.T, client *http.Client, url, message string, documents [][]byte, brandFiles []namedFile, out any) {
 	t.Helper()
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)
 	_ = writer.WriteField("message", message)
-	part, err := writer.CreateFormFile("document", "brief.docx")
-	if err != nil {
-		t.Fatal(err)
+	for index, document := range documents {
+		part, err := writer.CreateFormFile("document", fmt.Sprintf("brief-%d.docx", index+1))
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, _ = part.Write(document)
 	}
-	_, _ = part.Write(document)
+	for _, brandFile := range brandFiles {
+		part, err := writer.CreateFormFile("brand_file", brandFile.name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, _ = part.Write(brandFile.data)
+	}
 	_ = writer.Close()
 	req, err := http.NewRequest(http.MethodPost, url, &body)
 	if err != nil {

@@ -68,7 +68,7 @@
             <div class="wizard-steps" id="researchSteps"></div>
             <div id="researchQuestions" class="research-questions"></div>
             <textarea id="researchAnswer" rows="5" placeholder="请尽量完整填写，Word 文档可在第一步上传"></textarea>
-            <div id="researchUpload" class="research-upload"><label for="researchDocumentInput" class="drop-zone"><strong>＋ 上传 Word 需求文档</strong><span>也可以将 .docx 文件拖到这里</span></label><input id="researchDocumentInput" type="file" accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document"><span id="researchDocumentName"></span><label for="brandFileInput" class="brand-file-label">＋ 上传品牌 AI 文件</label><input id="brandFileInput" type="file" accept=".ai,.eps,.svg,application/postscript,image/svg+xml"><span id="brandFileName"></span></div>
+            <div id="researchUpload" class="research-upload"><label for="researchDocumentInput" class="drop-zone"><strong>＋ 上传 Word 需求文档（可多选）</strong><span>也可以将多个 .docx 文件拖到这里</span></label><input id="researchDocumentInput" type="file" multiple accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document"><span id="researchDocumentName"></span><label for="brandFileInput" class="brand-file-label brand-drop-zone"><strong>＋ 上传品牌 AI 文件（可多选）</strong><span>支持拖拽 .ai / .eps / .svg 文件</span></label><input id="brandFileInput" type="file" multiple accept=".ai,.eps,.svg,application/postscript,image/svg+xml"><span id="brandFileName"></span></div>
             <div id="researchTaskProgress" class="research-task-progress hidden"><span class="progress-spinner"></span><strong id="researchTaskProgressText">正在提交本步…</strong></div>
             <div class="wizard-footer"><span id="researchProgressText" class="muted">每一步提交后，Agent 会整理并保存 Brief。</span><button id="researchNextBtn" class="primary" type="button">提交本步并继续 <span>→</span></button></div>
           </div>
@@ -76,7 +76,7 @@
             <div class="chat-card card">
               <div class="card-header"><div><div class="eyebrow">AI 需求采集</div><h2>把你的想法告诉我</h2></div><span class="live-label"><i></i> Agent 在线</span></div>
               <div id="chatMessages" class="chat-messages"><div class="message agent"><div class="avatar">P</div><div><div class="message-author">Packaging AI</div><p>你好！先告诉我产品是什么、准备卖给谁，以及你希望包装传达什么感觉。</p></div></div></div>
-              <form id="chatForm" class="chat-form"><textarea id="chatInput" rows="2" required placeholder="例如：我们要做一套年轻人喜欢的红茶礼盒，希望有东方感，但不要太传统……"></textarea><div class="chat-attachment"><label for="documentInput">＋ Word 需求</label><input id="documentInput" type="file" accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document"><span id="documentName"></span></div><button class="send-button" type="submit">发送 <span>↗</span></button></form>
+              <form id="chatForm" class="chat-form"><textarea id="chatInput" rows="2" required placeholder="例如：我们要做一套年轻人喜欢的红茶礼盒，希望有东方感，但不要太传统……"></textarea><div class="chat-attachment"><label for="documentInput">＋ Word 需求（可多选）</label><input id="documentInput" type="file" multiple accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document"><span id="documentName"></span></div><button class="send-button" type="submit">发送 <span>↗</span></button></form>
               <div id="taskNotice" class="task-notice hidden"></div>
             </div>
             <div class="side-insight card"><div class="eyebrow">采集进度</div><div class="progress-ring" id="progressRing"><strong id="progressValue">0%</strong><span>Brief 完整度</span></div><div id="nextQuestions" class="question-list"><div class="muted">完成几轮对话后，这里会显示 Agent 的下一步追问。</div></div></div>
@@ -98,6 +98,6 @@
     </section>
   </main>
   <div id="toast" class="toast"></div>
-  <script src="/app.js?v=20261016-export-auth-fix"></script>
+  <script src="/app.js?v=20261016-multi-upload-fix"></script>
 </body>
 </html>
