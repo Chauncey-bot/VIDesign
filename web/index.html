@@ -89,7 +89,7 @@
         </section>
 
         <section id="tab-proposals" class="tab-panel">
-          <div class="section-heading"><div><div class="eyebrow">设计迭代</div><h2>方案与反馈</h2></div><div><button id="exportPdfBtn" class="secondary">下载 PDF</button><button id="exportMdBtn" class="secondary">下载说明</button><button id="batchDownloadBtn" class="secondary">批量下载图片</button><button id="generateBtn" class="primary">生成第一轮 9 套方案 <span>→</span></button><button id="refreshProposalsBtn" class="secondary">刷新方案</button></div></div>
+          <div class="section-heading"><div><div class="eyebrow">设计迭代</div><h2>方案与反馈</h2></div><div><button id="exportPdfBtn" class="secondary">下载 PDF</button><button id="exportMdBtn" class="secondary">下载说明</button><button id="bundleDownloadBtn" class="secondary">打包下载全部方案 + PDF</button><button id="batchDownloadBtn" class="secondary">批量下载图片</button><button id="generateBtn" class="primary">生成第一轮 9 套方案 <span>→</span></button><button id="refreshProposalsBtn" class="secondary">刷新方案</button></div></div>
           <div id="designProgress" class="design-progress hidden"><span class="progress-spinner"></span><span id="designProgressText">方案任务准备中…</span></div>
           <div id="proposalList" class="proposal-list"><div class="empty-panel"><span>✦</span><p>第一轮方案还没有生成。完成 Brief 后，可以从这里查看方案并提交反馈。</p></div></div>
           <div class="feedback-card card"><div class="eyebrow">客户反馈</div><h3>告诉我们要如何调整</h3><form id="feedbackForm" class="feedback-form"><label>方案 ID<input id="feedbackProposalId" required placeholder="选择方案后自动填入"></label><label>评分<select id="feedbackRating"><option value="5">5 · 非常喜欢</option><option value="4">4 · 喜欢</option><option value="3">3 · 需要调整</option><option value="2">2 · 不太符合</option><option value="1">1 · 不符合</option></select></label><label class="full-row">修改意见<textarea id="feedbackComment" rows="3" required placeholder="哪些地方喜欢？哪些地方必须修改？"></textarea></label><button class="primary" type="submit">提交反馈并生成二轮 <span>→</span></button></form><div id="feedbackResult" class="form-result hidden"></div></div>
@@ -98,6 +98,6 @@
     </section>
   </main>
   <div id="toast" class="toast"></div>
-  <script src="/app.js?v=20261016-proposal-submit-fix"></script>
+  <script src="/app.js?v=20261016-bundle-download-fix"></script>
 </body>
 </html>

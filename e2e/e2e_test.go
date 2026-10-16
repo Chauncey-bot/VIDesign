@@ -132,6 +132,10 @@ func TestProjectChatPersistsBrief(t *testing.T) {
 	if !bytes.Contains(markdown, []byte("设计 Brief")) {
 		t.Fatal("markdown report is missing Brief section")
 	}
+	bundle := requestBytes(t, client, http.MethodGet, baseURL+"/api/v1/projects/"+project.ID+"/export?format=zip")
+	if len(bundle) < 4 || string(bundle[:4]) != "PK\x03\x04" {
+		t.Fatalf("invalid bundle export header: %q", bundle[:min(4, len(bundle))])
+	}
 }
 
 func pollSucceeded(t *testing.T, client *http.Client, baseURL, taskID string) {

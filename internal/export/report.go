@@ -1,6 +1,7 @@
 package export
 
 import (
+	"archive/zip"
 	"bytes"
 	"context"
 	_ "embed"
@@ -89,6 +90,66 @@ func PDF(data ReportData) ([]byte, error) {
 		return nil, err
 	}
 	return out.Bytes(), nil
+}
+
+// Bundle packages the report and every proposal image into one downloadable ZIP.
+func Bundle(data ReportData) ([]byte, error) {
+	pdf, err := PDF(data)
+	if err != nil {
+		return nil, err
+	}
+	var out bytes.Buffer
+	archive := zip.NewWriter(&out)
+	add := func(name string, content []byte) error {
+		entry, err := archive.Create(name)
+		if err != nil {
+			return err
+		}
+		_, err = entry.Write(content)
+		return err
+	}
+	if err := add("packaging-report.pdf", pdf); err != nil {
+		return nil, err
+	}
+	if err := add("packaging-report.md", Markdown(data)); err != nil {
+		return nil, err
+	}
+	for index, proposal := range data.Proposals {
+		for assetIndex, asset := range proposal.Assets {
+			imageData, imageType, err := loadImage(context.Background(), asset.StorageURL)
+			if err != nil || imageType == "" {
+				continue
+			}
+			ext := strings.ToLower(imageType)
+			if ext == "jpeg" {
+				ext = "jpg"
+			}
+			name := fmt.Sprintf("proposals/%02d-%s-%d.%s", index+1, safeFileName(proposal.Title), assetIndex+1, ext)
+			if err := add(name, imageData); err != nil {
+				return nil, err
+			}
+		}
+	}
+	if err := archive.Close(); err != nil {
+		return nil, err
+	}
+	return out.Bytes(), nil
+}
+
+func safeFileName(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "proposal"
+	}
+	var b strings.Builder
+	for _, r := range value {
+		if r == '/' || r == '\\' || r == ':' || r == '*' || r == '?' || r == '"' || r == '<' || r == '>' || r == '|' {
+			b.WriteRune('_')
+			continue
+		}
+		b.WriteRune(r)
+	}
+	return b.String()
 }
 
 func loadImage(ctx context.Context, source string) ([]byte, string, error) {

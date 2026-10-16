@@ -169,6 +169,9 @@ PATCH 示例：
 ```text
 GET /projects/{project_id}/export?format=pdf
 GET /projects/{project_id}/export?format=markdown
+GET /projects/{project_id}/export?format=zip
+
+`format=zip` 返回一个打包文件，包含中文 PDF 报告、设计说明和全部方案图片。
 ```
 
 下载单个方案图片：

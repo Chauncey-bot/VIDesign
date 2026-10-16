@@ -499,6 +499,15 @@ func (s *Server) exportProject(w http.ResponseWriter, r *http.Request, projectID
 		return
 	}
 	switch r.URL.Query().Get("format") {
+	case "zip", "bundle":
+		content, err := export.Bundle(data)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "bundle_generation_failed")
+			return
+		}
+		w.Header().Set("Content-Type", "application/zip")
+		w.Header().Set("Content-Disposition", "attachment; filename=packaging-design-bundle.zip")
+		_, _ = w.Write(content)
 	case "markdown", "md":
 		w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
 		w.Header().Set("Content-Disposition", "attachment; filename=packaging-report.md")
