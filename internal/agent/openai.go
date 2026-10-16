@@ -104,6 +104,10 @@ func (a *LLMIntake) Run(ctx context.Context, input RunInput) (RunOutput, error) 
 	documentText, _ := input.Payload["document_text"].(string)
 	imageURLs, _ := input.Payload["document_images"].([]string)
 	userContent := fmt.Sprintf("已有 Brief：%s\n客户最新消息：%s", briefJSON, message)
+	if brandAssets, ok := input.Payload["brand_assets"]; ok {
+		brandJSON, _ := json.Marshal(brandAssets)
+		userContent += "\n客户上传的品牌源文件（仅记录文件名和类型，需在后续设计中保留品牌资产）：" + string(brandJSON)
+	}
 	if documentText != "" {
 		userContent += "\nWord 文档正文：\n" + documentText
 	}

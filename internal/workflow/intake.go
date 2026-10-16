@@ -85,6 +85,23 @@ func (w *IntakeWorkflow) Handle(ctx context.Context, task taskqueue.Task) error 
 		}
 		agentPayload["document_images"] = imageURLs
 	}
+	if ids, ok := task.Payload["brand_asset_ids"].([]any); ok {
+		assetIDs := make([]string, 0, len(ids))
+		for _, id := range ids {
+			if value, ok := id.(string); ok {
+				assetIDs = append(assetIDs, value)
+			}
+		}
+		assets, err := w.repo.GetAssets(ctx, assetIDs)
+		if err != nil {
+			return err
+		}
+		brandAssets := make([]map[string]any, 0, len(assets))
+		for _, asset := range assets {
+			brandAssets = append(brandAssets, map[string]any{"name": asset.Prompt, "type": asset.Model})
+		}
+		agentPayload["brand_assets"] = brandAssets
+	}
 	run, err := w.intake.Run(ctx, agent.RunInput{ProjectID: task.ProjectID, Round: project.CurrentRound, Payload: agentPayload})
 	if err != nil {
 		return err

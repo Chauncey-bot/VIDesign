@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"mime"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -116,7 +117,7 @@ func (s *Server) projectRoutes(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if len(parts) == 2 && parts[1] == "chat" && r.Method == http.MethodPost {
-		message, documentText, assetIDs, err := s.parseChatRequest(r, projectID)
+		message, documentText, assetIDs, brandAssetIDs, err := s.parseChatRequest(r, projectID)
 		if err != nil || strings.TrimSpace(message) == "" {
 			writeError(w, http.StatusBadRequest, "message is required")
 			return
@@ -127,6 +128,9 @@ func (s *Server) projectRoutes(w http.ResponseWriter, r *http.Request) {
 		}
 		if len(assetIDs) > 0 {
 			payload["document_asset_ids"] = assetIDs
+		}
+		if len(brandAssetIDs) > 0 {
+			payload["brand_asset_ids"] = brandAssetIDs
 		}
 		task := taskqueue.Task{ID: repository.NewID(), Kind: workflow.ChatTask, ProjectID: projectID, Payload: payload}
 		if err := s.queue.Submit(r.Context(), task); err != nil {
@@ -194,49 +198,87 @@ func (s *Server) projectRoutes(w http.ResponseWriter, r *http.Request) {
 	writeError(w, http.StatusNotFound, "route_not_found")
 }
 
-func (s *Server) parseChatRequest(r *http.Request, projectID string) (string, string, []string, error) {
+func (s *Server) parseChatRequest(r *http.Request, projectID string) (string, string, []string, []string, error) {
 	contentType := r.Header.Get("Content-Type")
 	if !strings.HasPrefix(contentType, "multipart/form-data") {
 		var req struct {
 			Message string `json:"message"`
 		}
 		if err := decodeBody(r, &req); err != nil {
-			return "", "", nil, err
+			return "", "", nil, nil, err
 		}
-		return req.Message, "", nil, nil
+		return req.Message, "", nil, nil, nil
 	}
 	if err := r.ParseMultipartForm(20 << 20); err != nil {
-		return "", "", nil, err
+		return "", "", nil, nil, err
 	}
 	message := r.FormValue("message")
+	var documentText string
+	assetIDs := []string{}
 	file, header, err := r.FormFile("document")
-	if err != nil {
-		if errors.Is(err, http.ErrMissingFile) {
-			return message, "", nil, nil
+	if err == nil {
+		defer file.Close()
+		if !strings.HasSuffix(strings.ToLower(header.Filename), ".docx") {
+			return "", "", nil, nil, fmt.Errorf("only .docx is supported in document field")
 		}
-		return "", "", nil, err
+		data, err := io.ReadAll(io.LimitReader(file, 20<<20))
+		if err != nil {
+			return "", "", nil, nil, err
+		}
+		document, err := docx.Parse(data)
+		if err != nil {
+			return "", "", nil, nil, err
+		}
+		documentText = document.Text
+		assetIDs = make([]string, 0, len(document.Images))
+		for _, image := range document.Images {
+			asset := domain.Asset{ID: repository.NewID(), ProjectID: projectID, AssetType: "brief_reference_image", StorageURL: image.DataURL, Prompt: image.Name, Provider: "docx-upload", Version: 1}
+			if err := s.repo.CreateAsset(r.Context(), asset); err != nil {
+				return "", "", nil, nil, err
+			}
+			assetIDs = append(assetIDs, asset.ID)
+		}
+	} else if !errors.Is(err, http.ErrMissingFile) {
+		return "", "", nil, nil, err
+	}
+	brandAssetIDs, err := s.parseBrandAsset(r, projectID)
+	if err != nil {
+		return "", "", nil, nil, err
+	}
+	return message, documentText, assetIDs, brandAssetIDs, nil
+}
+
+func (s *Server) parseBrandAsset(r *http.Request, projectID string) ([]string, error) {
+	file, header, err := r.FormFile("brand_file")
+	if errors.Is(err, http.ErrMissingFile) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
 	}
 	defer file.Close()
-	if !strings.HasSuffix(strings.ToLower(header.Filename), ".docx") {
-		return "", "", nil, fmt.Errorf("only .docx is supported")
+	name := strings.TrimSpace(header.Filename)
+	dot := strings.LastIndex(name, ".")
+	if dot < 0 {
+		return nil, fmt.Errorf("brand_file must be .ai, .eps or .svg")
+	}
+	ext := strings.ToLower(name[dot:])
+	if ext != ".ai" && ext != ".eps" && ext != ".svg" {
+		return nil, fmt.Errorf("brand_file must be .ai, .eps or .svg")
 	}
 	data, err := io.ReadAll(io.LimitReader(file, 20<<20))
 	if err != nil {
-		return "", "", nil, err
+		return nil, err
 	}
-	document, err := docx.Parse(data)
-	if err != nil {
-		return "", "", nil, err
+	mimeType := mime.TypeByExtension(ext)
+	if mimeType == "" {
+		mimeType = "application/octet-stream"
 	}
-	assetIDs := make([]string, 0, len(document.Images))
-	for _, image := range document.Images {
-		asset := domain.Asset{ID: repository.NewID(), ProjectID: projectID, AssetType: "brief_reference_image", StorageURL: image.DataURL, Prompt: image.Name, Provider: "docx-upload", Version: 1}
-		if err := s.repo.CreateAsset(r.Context(), asset); err != nil {
-			return "", "", nil, err
-		}
-		assetIDs = append(assetIDs, asset.ID)
+	asset := domain.Asset{ID: repository.NewID(), ProjectID: projectID, AssetType: "brand_source_file", StorageURL: "data:" + mimeType + ";base64," + base64.StdEncoding.EncodeToString(data), Prompt: name, Provider: "customer-upload", Model: ext, Version: 1}
+	if err := s.repo.CreateAsset(r.Context(), asset); err != nil {
+		return nil, err
 	}
-	return message, document.Text, assetIDs, nil
+	return []string{asset.ID}, nil
 }
 
 func (s *Server) register(w http.ResponseWriter, r *http.Request) {
