@@ -54,30 +54,41 @@ func (w *DesignWorkflow) generate(ctx context.Context, task taskqueue.Task) erro
 	if value, ok := task.Payload["proposal_count"].(float64); ok && int(value) > 0 {
 		count = int(value)
 	}
-	run, err := w.concept.Run(ctx, agent.RunInput{ProjectID: task.ProjectID, Round: project.CurrentRound + 1, Payload: map[string]any{"brief": brief, "proposal_count": count}})
-	if err != nil {
-		return err
-	}
-	if err := w.repo.CreateAgentRun(ctx, task.ProjectID, run); err != nil {
-		return err
-	}
-	items, ok := run.Payload["proposals"].([]any)
-	if !ok || len(items) == 0 {
-		return fmt.Errorf("concept Agent returned no proposals")
-	}
 	round := project.CurrentRound + 1
-	for _, item := range items {
-		proposalMap, ok := item.(map[string]any)
-		if !ok {
-			continue
+	generated := 0
+	for generated < count {
+		batch := count - generated
+		if batch > 3 {
+			batch = 3
 		}
-		proposal := proposalFromMap(task.ProjectID, round, proposalMap)
-		if err := w.persistProposalWithImage(ctx, proposal, proposalMap); err != nil {
+		run, err := w.concept.Run(ctx, agent.RunInput{ProjectID: task.ProjectID, Round: round, Payload: map[string]any{"brief": brief, "proposal_count": batch}})
+		if err != nil {
 			return err
 		}
-	}
-	if err := w.repo.CompleteAgentRun(ctx, task.ProjectID, run.AgentName, run.Payload); err != nil {
-		return err
+		if err := w.repo.CreateAgentRun(ctx, task.ProjectID, run); err != nil {
+			return err
+		}
+		items, ok := run.Payload["proposals"].([]any)
+		if !ok || len(items) == 0 {
+			return fmt.Errorf("concept Agent returned no proposals")
+		}
+		for _, item := range items {
+			proposalMap, ok := item.(map[string]any)
+			if !ok {
+				continue
+			}
+			proposal := proposalFromMap(task.ProjectID, round, proposalMap)
+			if err := w.persistProposalWithImage(ctx, proposal, proposalMap); err != nil {
+				return err
+			}
+			generated++
+			if generated >= count {
+				break
+			}
+		}
+		if err := w.repo.CompleteAgentRun(ctx, task.ProjectID, run.AgentName, run.Payload); err != nil {
+			return err
+		}
 	}
 	if err := w.repo.UpdateRoundAndStatus(ctx, project.ID, round, domain.ProjectGenerating); err != nil {
 		return err

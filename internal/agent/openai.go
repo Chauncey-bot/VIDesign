@@ -22,7 +22,7 @@ func NewOpenAICompatible(baseURL, apiKey, model string) (*OpenAICompatible, erro
 	if strings.TrimSpace(baseURL) == "" || strings.TrimSpace(apiKey) == "" || strings.TrimSpace(model) == "" {
 		return nil, fmt.Errorf("LLM base URL, API key and model are required")
 	}
-	return &OpenAICompatible{baseURL: strings.TrimRight(baseURL, "/"), apiKey: apiKey, model: model, client: &http.Client{Timeout: 90 * time.Second}}, nil
+	return &OpenAICompatible{baseURL: strings.TrimRight(baseURL, "/"), apiKey: apiKey, model: model, client: &http.Client{Timeout: 300 * time.Second}}, nil
 }
 
 func (p *OpenAICompatible) Chat(ctx context.Context, request ChatRequest) (ChatResponse, error) {
