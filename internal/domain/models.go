@@ -56,6 +56,7 @@ type DesignProposal struct {
 	ImageAssetIDs  []string       `json:"image_asset_ids"`
 	Difference     string         `json:"difference_summary"`
 	Status         string         `json:"status"`
+	CustomerScore  *int           `json:"customer_score,omitempty"`
 	CreatedAt      time.Time      `json:"created_at"`
 	Assets         []Asset        `json:"assets,omitempty"`
 }

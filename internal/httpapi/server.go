@@ -499,6 +499,26 @@ func (s *Server) brief(w http.ResponseWriter, r *http.Request, projectID string)
 
 func (s *Server) proposalRoutes(w http.ResponseWriter, r *http.Request) {
 	parts := pathParts(r.URL.Path, "/api/v1/proposals/")
+	if len(parts) == 2 && parts[1] == "score" && (r.Method == http.MethodPost || r.Method == http.MethodPatch) {
+		var req struct {
+			Score int `json:"score"`
+		}
+		if err := decodeBody(r, &req); err != nil || req.Score < 0 || req.Score > 10 {
+			writeError(w, http.StatusBadRequest, "score must be between 0 and 10")
+			return
+		}
+		if err := s.repo.UpdateProposalScore(r.Context(), parts[0], req.Score); err != nil {
+			writeDBError(w, err)
+			return
+		}
+		proposal, err := s.repo.GetProposal(r.Context(), parts[0])
+		if err != nil {
+			writeDBError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"proposal_id": parts[0], "score": proposal.CustomerScore})
+		return
+	}
 	if len(parts) != 2 || parts[1] != "feedback" || r.Method != http.MethodPost {
 		writeError(w, http.StatusNotFound, "route_not_found")
 		return

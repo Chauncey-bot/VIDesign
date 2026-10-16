@@ -30,6 +30,7 @@ type BriefRepository interface {
 type ProposalRepository interface {
 	Create(ctx context.Context, proposal domain.DesignProposal) error
 	List(ctx context.Context, projectID string, round int) ([]domain.DesignProposal, error)
+	UpdateScore(ctx context.Context, proposalID string, score int) error
 }
 
 type FeedbackRepository interface {
@@ -56,7 +57,14 @@ func (r *MySQLRepository) EnsureAuthSchema(ctx context.Context) error {
 	// limit. Keep the asset URL column compatible with both remote URLs and
 	// embedded image data returned by OpenAI-compatible providers.
 	_, err = r.db.ExecContext(ctx, `ALTER TABLE assets MODIFY storage_url LONGTEXT NOT NULL`)
-	return err
+	if err != nil {
+		return err
+	}
+	_, err = r.db.ExecContext(ctx, `ALTER TABLE design_proposals ADD COLUMN customer_score TINYINT NULL`)
+	if err != nil && !strings.Contains(strings.ToLower(err.Error()), "duplicate column") {
+		return err
+	}
+	return nil
 }
 
 func (r *MySQLRepository) CreateUser(ctx context.Context, email, passwordHash string) (auth.User, error) {
@@ -310,7 +318,7 @@ func (r *MySQLRepository) GetAssets(ctx context.Context, ids []string) ([]domain
 }
 
 func (r *MySQLRepository) ListProposals(ctx context.Context, projectID string, round int) ([]domain.DesignProposal, error) {
-	query := `SELECT id, project_id, round_no, title, concept, design_strategy, color_palette, typography, difference_summary, status, created_at FROM design_proposals WHERE project_id = ?`
+	query := `SELECT id, project_id, round_no, title, concept, design_strategy, color_palette, typography, difference_summary, status, customer_score, created_at FROM design_proposals WHERE project_id = ?`
 	args := []any{projectID}
 	if round > 0 {
 		query += " AND round_no = ?"
@@ -326,8 +334,13 @@ func (r *MySQLRepository) ListProposals(ctx context.Context, projectID string, r
 	for rows.Next() {
 		var p domain.DesignProposal
 		var strategy, palette []byte
-		if err := rows.Scan(&p.ID, &p.ProjectID, &p.Round, &p.Title, &p.Concept, &strategy, &palette, &p.Typography, &p.Difference, &p.Status, &p.CreatedAt); err != nil {
+		var score sql.NullInt64
+		if err := rows.Scan(&p.ID, &p.ProjectID, &p.Round, &p.Title, &p.Concept, &strategy, &palette, &p.Typography, &p.Difference, &p.Status, &score, &p.CreatedAt); err != nil {
 			return nil, err
+		}
+		if score.Valid {
+			value := int(score.Int64)
+			p.CustomerScore = &value
 		}
 		if err := unmarshalJSON(strategy, &p.DesignStrategy); err != nil {
 			return nil, err
@@ -348,13 +361,18 @@ func (r *MySQLRepository) ListProposals(ctx context.Context, projectID string, r
 func (r *MySQLRepository) GetProposal(ctx context.Context, id string) (domain.DesignProposal, error) {
 	var p domain.DesignProposal
 	var strategy, palette []byte
-	err := r.db.QueryRowContext(ctx, `SELECT id, project_id, round_no, title, concept, design_strategy, color_palette, typography, difference_summary, status, created_at
-		FROM design_proposals WHERE id = ?`, id).Scan(&p.ID, &p.ProjectID, &p.Round, &p.Title, &p.Concept, &strategy, &palette, &p.Typography, &p.Difference, &p.Status, &p.CreatedAt)
+	var score sql.NullInt64
+	err := r.db.QueryRowContext(ctx, `SELECT id, project_id, round_no, title, concept, design_strategy, color_palette, typography, difference_summary, status, customer_score, created_at
+		FROM design_proposals WHERE id = ?`, id).Scan(&p.ID, &p.ProjectID, &p.Round, &p.Title, &p.Concept, &strategy, &palette, &p.Typography, &p.Difference, &p.Status, &score, &p.CreatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return domain.DesignProposal{}, ErrNotFound
 	}
 	if err != nil {
 		return domain.DesignProposal{}, err
+	}
+	if score.Valid {
+		value := int(score.Int64)
+		p.CustomerScore = &value
 	}
 	if err := unmarshalJSON(strategy, &p.DesignStrategy); err != nil {
 		return domain.DesignProposal{}, err
@@ -367,6 +385,17 @@ func (r *MySQLRepository) GetProposal(ctx context.Context, id string) (domain.De
 		return domain.DesignProposal{}, err
 	}
 	return p, nil
+}
+
+func (r *MySQLRepository) UpdateProposalScore(ctx context.Context, proposalID string, score int) error {
+	result, err := r.db.ExecContext(ctx, `UPDATE design_proposals SET customer_score = ? WHERE id = ?`, score, proposalID)
+	if err != nil {
+		return err
+	}
+	if affected, err := result.RowsAffected(); err == nil && affected == 0 {
+		return ErrNotFound
+	}
+	return nil
 }
 
 func (r *MySQLRepository) listProposalAssets(ctx context.Context, proposalID string) ([]domain.Asset, error) {
