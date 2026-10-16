@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"packaging-ai/internal/agent"
 	"packaging-ai/internal/domain"
@@ -119,6 +120,10 @@ func (w *IntakeWorkflow) Handle(ctx context.Context, task taskqueue.Task) error 
 	if score, ok := run.Payload["completion_score"].(float64); ok {
 		brief.CompletionScore = int(score)
 	}
+	normalizeProductDetails(&brief)
+	if normalizedScore := briefCompletionScore(brief); normalizedScore > 0 {
+		brief.CompletionScore = normalizedScore
+	}
 	// Each intake pass is a new immutable Brief snapshot. Reusing the
 	// previous ID would violate the briefs primary key on the next chat turn.
 	brief.ID = repository.NewID()
@@ -182,6 +187,140 @@ func applyPatch(brief *domain.Brief, patch map[string]any) {
 			brief.ProductInfo[key] = value
 		}
 	}
+}
+
+// normalizeProductDetails maps the rich product array returned by the LLM into
+// the stable Brief fields used by the UI, scoring and design Agent.
+func normalizeProductDetails(brief *domain.Brief) {
+	if brief.ProductInfo == nil {
+		return
+	}
+	products, ok := brief.ProductInfo["products"].([]any)
+	if !ok || len(products) == 0 {
+		return
+	}
+	var audiences, materials, required, markets, constraints []string
+	var packageSpecs []map[string]any
+	for _, value := range products {
+		product, ok := value.(map[string]any)
+		if !ok {
+			continue
+		}
+		if brief.Audience == "" {
+			brief.Audience = briefStringValue(product, "target_customers", "")
+		}
+		if audience := briefStringValue(product, "target_customers", ""); audience != "" {
+			audiences = appendUnique(audiences, audience)
+		}
+		if material := briefStringValue(product, "material", ""); material != "" {
+			materials = appendUnique(materials, material)
+		}
+		if textValues := toStringsValue(product["mandatory_text"]); len(textValues) > 0 {
+			for _, text := range textValues {
+				required = appendUnique(required, text)
+			}
+		}
+		if scenarioValues := toStringsValue(product["usage_scenarios"]); len(scenarioValues) > 0 {
+			markets = appendUnique(markets, scenarioValues...)
+		}
+		if regulatoryValues := toStringsValue(product["regulatory_requirements"]); len(regulatoryValues) > 0 {
+			constraints = appendUnique(constraints, regulatoryValues...)
+		}
+		if len(packageSpecs) < len(products) {
+			packageSpecs = append(packageSpecs, map[string]any{
+				"name":            product["name"],
+				"specification":   product["specification"],
+				"packaging_type":  product["packaging_type"],
+				"packaging_scope": product["packaging_scope"],
+			})
+		}
+		if brief.ProductInfo["product_category"] == nil {
+			brief.ProductInfo["product_category"] = product["category"]
+		}
+		if brief.ProductInfo["product_name"] == nil {
+			brief.ProductInfo["product_name"] = product["name"]
+		}
+		if brief.ProductInfo["package_type"] == nil {
+			brief.ProductInfo["package_type"] = product["packaging_type"]
+		}
+	}
+	if len(audiences) > 0 {
+		brief.Audience = strings.Join(audiences, "；")
+	}
+	if len(materials) > 0 {
+		brief.Material = strings.Join(materials, "；")
+	}
+	if len(required) > 0 {
+		brief.RequiredText = required
+	}
+	if len(markets) > 0 {
+		brief.Market = strings.Join(markets, "、")
+	}
+	if len(constraints) > 0 {
+		brief.Constraints = constraints
+	}
+	if len(packageSpecs) > 0 {
+		brief.PackageSpec = map[string]any{"products": packageSpecs}
+	}
+}
+
+func briefCompletionScore(brief domain.Brief) int {
+	filled := 0
+	if value := brief.ProductInfo["product_category"]; value != nil && strings.TrimSpace(fmt.Sprint(value)) != "" {
+		filled++
+	}
+	if value := brief.ProductInfo["product_name"]; value != nil && strings.TrimSpace(fmt.Sprint(value)) != "" {
+		filled++
+	}
+	if strings.TrimSpace(brief.Audience) != "" {
+		filled++
+	}
+	if value := brief.ProductInfo["package_type"]; value != nil && strings.TrimSpace(fmt.Sprint(value)) != "" {
+		filled++
+	}
+	if len(brief.RequiredText) > 0 {
+		filled++
+	}
+	if strings.TrimSpace(brief.Material) != "" {
+		filled++
+	}
+	if len(brief.PackageSpec) > 0 {
+		filled++
+	}
+	return filled * 100 / 7
+}
+
+func briefStringValue(value map[string]any, key, fallback string) string {
+	if result, ok := value[key].(string); ok && strings.TrimSpace(result) != "" {
+		return strings.TrimSpace(result)
+	}
+	return fallback
+}
+
+func toStringsValue(value any) []string {
+	values, ok := toStrings(value)
+	if !ok {
+		return nil
+	}
+	return values
+}
+
+func appendUnique(values []string, additions ...string) []string {
+	seen := make(map[string]struct{}, len(values)+len(additions))
+	for _, value := range values {
+		seen[value] = struct{}{}
+	}
+	for _, value := range additions {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		if _, exists := seen[value]; !exists {
+			values = append(values, value)
+			seen[value] = struct{}{}
+		}
+	}
+	return values
 }
 
 func toStrings(value any) ([]string, bool) {
