@@ -116,6 +116,18 @@ func (s *Server) projectRoutes(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, project)
 		return
 	}
+	if len(parts) == 2 && parts[1] == "fusions" {
+		s.fusions(w, r, projectID, "")
+		return
+	}
+	if len(parts) == 3 && parts[1] == "fusions" {
+		s.fusions(w, r, projectID, parts[2])
+		return
+	}
+	if len(parts) == 4 && parts[1] == "fusions" && parts[3] == "generate" {
+		s.fusions(w, r, projectID, parts[2])
+		return
+	}
 	if len(parts) == 2 && parts[1] == "chat" && r.Method == http.MethodPost {
 		message, documentText, assetIDs, brandAssetIDs, err := s.parseChatRequest(r, projectID)
 		if err != nil || strings.TrimSpace(message) == "" {
@@ -229,6 +241,130 @@ func (s *Server) projectRoutes(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeError(w, http.StatusNotFound, "route_not_found")
+}
+
+func (s *Server) fusions(w http.ResponseWriter, r *http.Request, projectID, fusionID string) {
+	if fusionID == "" && r.Method == http.MethodGet {
+		fusions, err := s.repo.ListFusions(r.Context(), projectID)
+		if err != nil {
+			writeDBError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, fusions)
+		return
+	}
+	if fusionID == "" && r.Method == http.MethodPost {
+		var req struct {
+			Name              string                 `json:"name"`
+			SourceProposalIDs []string               `json:"source_proposal_ids"`
+			SourceFeatures    map[string]any         `json:"source_features"`
+			FeatureSelections []domain.FusionFeature `json:"feature_selections"`
+			Weights           map[string]float64     `json:"weights"`
+			Constraints       []string               `json:"constraints"`
+		}
+		if err := decodeBody(r, &req); err != nil || strings.TrimSpace(req.Name) == "" {
+			writeError(w, http.StatusBadRequest, "name and fusion configuration are required")
+			return
+		}
+		if len(req.SourceProposalIDs) < 2 || len(req.SourceProposalIDs) > 5 {
+			writeError(w, http.StatusBadRequest, "select between 2 and 5 source proposals")
+			return
+		}
+		seenSources := map[string]bool{}
+		sourceSnapshots := make([]map[string]any, 0, len(req.SourceProposalIDs))
+		for _, id := range req.SourceProposalIDs {
+			proposal, err := s.repo.GetProposal(r.Context(), id)
+			if err != nil || proposal.ProjectID != projectID {
+				writeError(w, http.StatusBadRequest, "source proposal is invalid")
+				return
+			}
+			if seenSources[id] {
+				writeError(w, http.StatusBadRequest, "source proposals must be unique")
+				return
+			}
+			seenSources[id] = true
+			sourceSnapshots = append(sourceSnapshots, map[string]any{"id": proposal.ID, "title": proposal.Title, "concept": proposal.Concept, "design_strategy": proposal.DesignStrategy, "color_palette": proposal.ColorPalette, "typography": proposal.Typography})
+		}
+		if len(req.SourceFeatures) == 0 {
+			req.SourceFeatures = map[string]any{"proposals": sourceSnapshots}
+		}
+		if req.Weights == nil {
+			req.Weights = map[string]float64{"strategy": 0.35, "visual": 0.35, "production": 0.30}
+		}
+		if req.Constraints == nil {
+			req.Constraints = []string{}
+		}
+		fusion := domain.DesignFusion{ID: repository.NewID(), ProjectID: projectID, Name: strings.TrimSpace(req.Name), Status: "draft", SourceProposalIDs: req.SourceProposalIDs, SourceFeatures: req.SourceFeatures, FeatureSelections: req.FeatureSelections, Weights: req.Weights, Constraints: req.Constraints, SynthesisBrief: map[string]any{"source_proposal_ids": req.SourceProposalIDs, "feature_selections": req.FeatureSelections, "weights": req.Weights, "constraints": req.Constraints}, OutputProposalIDs: []string{}, Version: 1}
+		if err := s.repo.CreateFusion(r.Context(), fusion); err != nil {
+			writeDBError(w, err)
+			return
+		}
+		if saved, err := s.repo.GetFusion(r.Context(), fusion.ID); err == nil {
+			fusion = saved
+		}
+		writeJSON(w, http.StatusCreated, fusion)
+		return
+	}
+	if fusionID == "" {
+		writeError(w, http.StatusNotFound, "route_not_found")
+		return
+	}
+	fusion, err := s.repo.GetFusion(r.Context(), fusionID)
+	if err != nil {
+		writeDBError(w, err)
+		return
+	}
+	if fusion.ProjectID != projectID {
+		writeError(w, http.StatusNotFound, "resource_not_found")
+		return
+	}
+	if r.Method == http.MethodGet {
+		writeJSON(w, http.StatusOK, fusion)
+		return
+	}
+	if r.Method == http.MethodPatch {
+		var patch map[string]json.RawMessage
+		if err := decodeBody(r, &patch); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid fusion")
+			return
+		}
+		if value, ok := patch["name"]; ok {
+			_ = json.Unmarshal(value, &fusion.Name)
+		}
+		if value, ok := patch["feature_selections"]; ok {
+			_ = json.Unmarshal(value, &fusion.FeatureSelections)
+		}
+		if value, ok := patch["weights"]; ok {
+			_ = json.Unmarshal(value, &fusion.Weights)
+		}
+		if value, ok := patch["constraints"]; ok {
+			_ = json.Unmarshal(value, &fusion.Constraints)
+		}
+		fusion.SynthesisBrief = map[string]any{"source_proposal_ids": fusion.SourceProposalIDs, "feature_selections": fusion.FeatureSelections, "weights": fusion.Weights, "constraints": fusion.Constraints}
+		fusion.Version++
+		if err := s.repo.UpdateFusion(r.Context(), fusion); err != nil {
+			writeDBError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, fusion)
+		return
+	}
+	if r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/generate") {
+		fusion.Status = "queued"
+		fusion.Version++
+		if err := s.repo.UpdateFusion(r.Context(), fusion); err != nil {
+			writeDBError(w, err)
+			return
+		}
+		task := taskqueue.Task{ID: repository.NewID(), Kind: workflow.FusionTask, ProjectID: projectID, Payload: map[string]any{"fusion_id": fusionID}}
+		if err := s.queue.Submit(r.Context(), task); err != nil {
+			writeError(w, http.StatusServiceUnavailable, "task_queue_unavailable")
+			return
+		}
+		writeJSON(w, http.StatusAccepted, map[string]any{"task_id": task.ID, "status": taskqueue.Queued, "fusion_id": fusionID})
+		return
+	}
+	writeError(w, http.StatusMethodNotAllowed, "method_not_allowed")
 }
 
 func (s *Server) parseChatRequest(r *http.Request, projectID string) (string, string, []string, []string, error) {

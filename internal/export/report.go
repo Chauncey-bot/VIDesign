@@ -35,7 +35,7 @@ func Markdown(data ReportData) []byte {
 	b.WriteString("## 设计方案\n\n")
 	for i, proposal := range data.Proposals {
 		fmt.Fprintf(&b, "### %d. %s\n\n", i+1, proposal.Title)
-		fmt.Fprintf(&b, "- 轮次：%d\n- 创意：%s\n- 设计策略：`%v`\n- 配色：%s\n- 字体：%s\n- 差异说明：%s\n", proposal.Round, proposal.Concept, proposal.DesignStrategy, strings.Join(proposal.ColorPalette, "、"), proposal.Typography, proposal.Difference)
+		fmt.Fprintf(&b, "- 轮次：%d\n- 来源融合会话：%s\n- 创意：%s\n- 设计策略：`%v`\n- 配色：%s\n- 字体：%s\n- 差异说明：%s\n", proposal.Round, proposal.FusionID, proposal.Concept, proposal.DesignStrategy, strings.Join(proposal.ColorPalette, "、"), proposal.Typography, proposal.Difference)
 		for _, asset := range proposal.Assets {
 			fmt.Fprintf(&b, "- 图片资产：`%s`\n", asset.ID)
 		}
@@ -71,7 +71,7 @@ func PDF(data ReportData) ([]byte, error) {
 		pdf.SetFont("NotoSC", "", 11)
 		pdf.CellFormat(0, 7, fmt.Sprintf("%d. %s", i+1, proposal.Title), "", 1, "L", false, 0, "")
 		pdf.SetFont("NotoSC", "", 10)
-		pdf.MultiCell(0, 5.5, fmt.Sprintf("创意：%s\n设计策略：%v\n配色：%s\n字体：%s\n差异说明：%s\n图片资产：%d", proposal.Concept, proposal.DesignStrategy, strings.Join(proposal.ColorPalette, "、"), proposal.Typography, proposal.Difference, len(proposal.Assets)), "", "L", false)
+		pdf.MultiCell(0, 5.5, fmt.Sprintf("来源融合会话：%s\n创意：%s\n设计策略：%v\n配色：%s\n字体：%s\n差异说明：%s\n图片资产：%d", proposal.FusionID, proposal.Concept, proposal.DesignStrategy, strings.Join(proposal.ColorPalette, "、"), proposal.Typography, proposal.Difference, len(proposal.Assets)), "", "L", false)
 		for assetIndex, asset := range proposal.Assets {
 			imageData, imageType, err := loadImage(context.Background(), asset.StorageURL)
 			if err != nil || imageType == "" {

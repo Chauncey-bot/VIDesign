@@ -45,6 +45,8 @@ class Handler(BaseHTTPRequestHandler):
                 {"title": "墨金山水", "concept": "用墨色与金色表现高端礼赠", "design_strategy": {"direction": "高端礼赠"}, "color_palette": ["#1d2523", "#c58d42"], "typography": "高端人文宋体", "difference_summary": "稳重、高端、适合节日礼赠", "image_prompt": "premium black and gold tea gift box, ink landscape, luxury packaging mockup"},
                 {"title": "现代茶席", "concept": "以留白和几何图形呈现轻量化茶生活", "design_strategy": {"direction": "现代生活"}, "color_palette": ["#f5f1e8", "#789b8b"], "typography": "现代无衬线", "difference_summary": "年轻、轻盈、适合日常消费", "image_prompt": "minimal modern tea gift box, warm white and sage green, geometric packaging"}
             ]}, ensure_ascii=False)
+        elif "融合总监" in system:
+            content = json.dumps({"title": "山岚玉青 × 墨金山水融合版", "concept": "保留自然东方叙事与墨金高端识别，以留白控制视觉密度", "design_strategy": {"direction": "平衡东方与现代高端", "source_balance": "自然东方 + 高端礼赠"}, "color_palette": ["#2e6654", "#c58d42", "#f5f1e8"], "typography": "现代人文宋体", "difference_summary": "综合来源方案的文化叙事、金色工艺和留白构图，降低装饰密度以提升货架识别", "image_prompt": "balanced modern oriental tea gift box, jade green black and gold, restrained luxury packaging mockup"}, ensure_ascii=False)
         elif "迭代 Agent" in system:
             content = json.dumps({"title": "山岚玉青 · 升级版", "concept": "保留山岚玉青的自然主色，减少插画复杂度并突出低糖卖点", "design_strategy": {"direction": "自然东方升级", "revision": "突出低糖卖点"}, "color_palette": ["#2e6654", "#dce9df"], "typography": "现代宋体", "difference_summary": "根据客户反馈简化插画并强化卖点", "image_prompt": "revised jade green tea gift box, simplified mountain illustration, clear low sugar label, packaging mockup"}, ensure_ascii=False)
         else:

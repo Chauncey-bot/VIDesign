@@ -2,6 +2,7 @@ package workflow
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -14,17 +15,23 @@ import (
 const (
 	GenerateTask = "generate_design"
 	RevisionTask = "revise_design"
+	FusionTask   = "fuse_design"
 )
 
 type DesignWorkflow struct {
 	repo     *repository.MySQLRepository
 	concept  agent.Agent
 	revision agent.Agent
+	fusion   agent.Agent
 	image    agent.ImageProvider
 }
 
-func NewDesignWorkflow(repo *repository.MySQLRepository, concept, revision agent.Agent, image agent.ImageProvider) *DesignWorkflow {
-	return &DesignWorkflow{repo: repo, concept: concept, revision: revision, image: image}
+func NewDesignWorkflow(repo *repository.MySQLRepository, concept, revision agent.Agent, image agent.ImageProvider, fusion ...agent.Agent) *DesignWorkflow {
+	var fusionAgent agent.Agent
+	if len(fusion) > 0 {
+		fusionAgent = fusion[0]
+	}
+	return &DesignWorkflow{repo: repo, concept: concept, revision: revision, fusion: fusionAgent, image: image}
 }
 
 func (w *DesignWorkflow) Handle(ctx context.Context, task taskqueue.Task) error {
@@ -33,9 +40,74 @@ func (w *DesignWorkflow) Handle(ctx context.Context, task taskqueue.Task) error 
 		return w.generate(ctx, task)
 	case RevisionTask:
 		return w.revise(ctx, task)
+	case FusionTask:
+		return w.fuse(ctx, task)
 	default:
 		return fmt.Errorf("unsupported design task: %s", task.Kind)
 	}
+}
+
+func (w *DesignWorkflow) fuse(ctx context.Context, task taskqueue.Task) error {
+	if w.fusion == nil {
+		return fmt.Errorf("fusion agent is not configured")
+	}
+	project, err := w.repo.Get(ctx, task.ProjectID)
+	if err != nil {
+		return err
+	}
+	brief, err := w.repo.GetLatest(ctx, task.ProjectID)
+	if err != nil {
+		return err
+	}
+	fusionID, _ := task.Payload["fusion_id"].(string)
+	fusion, err := w.repo.GetFusion(ctx, fusionID)
+	if err != nil {
+		return err
+	}
+	if fusion.ProjectID != task.ProjectID {
+		return fmt.Errorf("fusion does not belong to project")
+	}
+	sources := make([]map[string]any, 0, len(fusion.SourceProposalIDs))
+	for _, sourceID := range fusion.SourceProposalIDs {
+		proposal, err := w.repo.GetProposal(ctx, sourceID)
+		if err != nil {
+			return err
+		}
+		if proposal.ProjectID != task.ProjectID {
+			return fmt.Errorf("source proposal does not belong to project")
+		}
+		proposal.Assets = nil
+		sources = append(sources, map[string]any{"id": proposal.ID, "title": proposal.Title, "concept": proposal.Concept, "design_strategy": proposal.DesignStrategy, "color_palette": proposal.ColorPalette, "typography": proposal.Typography, "difference_summary": proposal.Difference})
+	}
+	briefPayload, _ := json.Marshal(brief)
+	var briefMap map[string]any
+	_ = json.Unmarshal(briefPayload, &briefMap)
+	input := map[string]any{"brief": briefMap, "fusion": fusion, "sources": sources}
+	run, err := w.fusion.Run(ctx, agent.RunInput{ProjectID: task.ProjectID, Round: project.CurrentRound + 1, Payload: input})
+	if err != nil {
+		return err
+	}
+	if err := w.repo.CreateAgentRun(ctx, task.ProjectID, run); err != nil {
+		return err
+	}
+	proposal := proposalFromMap(task.ProjectID, project.CurrentRound+1, run.Payload)
+	proposal.FusionID = fusion.ID
+	if err := w.persistProposalWithImage(ctx, proposal, run.Payload); err != nil {
+		return err
+	}
+	if err := w.repo.CompleteAgentRun(ctx, task.ProjectID, run.AgentName, run.Payload); err != nil {
+		return err
+	}
+	fusion.Status = "completed"
+	fusion.OutputProposalIDs = append(fusion.OutputProposalIDs, proposal.ID)
+	fusion.Version++
+	if err := w.repo.UpdateFusion(ctx, fusion); err != nil {
+		return err
+	}
+	if err := w.repo.UpdateRoundAndStatus(ctx, project.ID, project.CurrentRound+1, domain.ProjectRevising); err != nil {
+		return err
+	}
+	return w.repo.UpdateStatus(ctx, project.ID, domain.ProjectAwaitFeedback)
 }
 
 func (w *DesignWorkflow) generate(ctx context.Context, task taskqueue.Task) error {

@@ -2,7 +2,7 @@
 set -eu
 
 COMPOSE="docker compose -f docker-compose.yml -f docker-compose.e2e.yml"
-APP_PORT="${APP_PORT:-18080}"
+export APP_PORT="${APP_PORT:-18080}"
 export LLM_API_KEY="${LLM_API_KEY:-e2e-key}"
 export AUTH_SECRET="${AUTH_SECRET:-e2e-secret}"
 cleanup() {

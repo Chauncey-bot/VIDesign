@@ -64,6 +64,26 @@ func (r *MySQLRepository) EnsureAuthSchema(ctx context.Context) error {
 	if err != nil && !strings.Contains(strings.ToLower(err.Error()), "duplicate column") {
 		return err
 	}
+	if _, err := r.db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS design_fusions (
+		id CHAR(36) NOT NULL, project_id CHAR(36) NOT NULL, name VARCHAR(255) NOT NULL,
+		status VARCHAR(64) NOT NULL DEFAULT 'draft', source_proposal_ids JSON NOT NULL,
+		source_features JSON NOT NULL, feature_selections JSON NOT NULL, weights JSON NOT NULL,
+		constraints_json JSON NOT NULL, synthesis_brief JSON NOT NULL, output_proposal_ids JSON NOT NULL,
+		version INT NOT NULL DEFAULT 1, created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+		updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+		PRIMARY KEY (id), KEY idx_fusions_project (project_id, created_at),
+		CONSTRAINT fk_fusions_project FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+	) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`); err != nil {
+		return err
+	}
+	_, err = r.db.ExecContext(ctx, `ALTER TABLE design_proposals ADD COLUMN fusion_id CHAR(36) NULL, ADD KEY idx_proposals_fusion (fusion_id)`)
+	if err != nil && !strings.Contains(strings.ToLower(err.Error()), "duplicate column") {
+		// MySQL reports duplicate key when the column already exists as well as
+		// when the index is already present. Existing installations are safe.
+		if !strings.Contains(strings.ToLower(err.Error()), "duplicate key") {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -262,8 +282,8 @@ func (r *MySQLRepository) CreateProposal(ctx context.Context, p domain.DesignPro
 		p.ID = newID()
 	}
 	_, err = r.db.ExecContext(ctx, `INSERT INTO design_proposals
-		(id, project_id, round_no, title, concept, design_strategy, color_palette, typography, difference_summary, status, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP(3))`, p.ID, p.ProjectID, p.Round, p.Title, p.Concept, strategy, palette, p.Typography, p.Difference, p.Status)
+		(id, project_id, round_no, title, concept, design_strategy, color_palette, typography, difference_summary, status, fusion_id, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULLIF(?, ''), CURRENT_TIMESTAMP(3))`, p.ID, p.ProjectID, p.Round, p.Title, p.Concept, strategy, palette, p.Typography, p.Difference, p.Status, p.FusionID)
 	return err
 }
 
@@ -318,7 +338,7 @@ func (r *MySQLRepository) GetAssets(ctx context.Context, ids []string) ([]domain
 }
 
 func (r *MySQLRepository) ListProposals(ctx context.Context, projectID string, round int) ([]domain.DesignProposal, error) {
-	query := `SELECT id, project_id, round_no, title, concept, design_strategy, color_palette, typography, difference_summary, status, customer_score, created_at FROM design_proposals WHERE project_id = ?`
+	query := `SELECT id, project_id, round_no, title, concept, design_strategy, color_palette, typography, difference_summary, status, customer_score, COALESCE(fusion_id, ''), created_at FROM design_proposals WHERE project_id = ?`
 	args := []any{projectID}
 	if round > 0 {
 		query += " AND round_no = ?"
@@ -335,7 +355,7 @@ func (r *MySQLRepository) ListProposals(ctx context.Context, projectID string, r
 		var p domain.DesignProposal
 		var strategy, palette []byte
 		var score sql.NullInt64
-		if err := rows.Scan(&p.ID, &p.ProjectID, &p.Round, &p.Title, &p.Concept, &strategy, &palette, &p.Typography, &p.Difference, &p.Status, &score, &p.CreatedAt); err != nil {
+		if err := rows.Scan(&p.ID, &p.ProjectID, &p.Round, &p.Title, &p.Concept, &strategy, &palette, &p.Typography, &p.Difference, &p.Status, &score, &p.FusionID, &p.CreatedAt); err != nil {
 			return nil, err
 		}
 		if score.Valid {
@@ -362,8 +382,8 @@ func (r *MySQLRepository) GetProposal(ctx context.Context, id string) (domain.De
 	var p domain.DesignProposal
 	var strategy, palette []byte
 	var score sql.NullInt64
-	err := r.db.QueryRowContext(ctx, `SELECT id, project_id, round_no, title, concept, design_strategy, color_palette, typography, difference_summary, status, customer_score, created_at
-		FROM design_proposals WHERE id = ?`, id).Scan(&p.ID, &p.ProjectID, &p.Round, &p.Title, &p.Concept, &strategy, &palette, &p.Typography, &p.Difference, &p.Status, &score, &p.CreatedAt)
+	err := r.db.QueryRowContext(ctx, `SELECT id, project_id, round_no, title, concept, design_strategy, color_palette, typography, difference_summary, status, customer_score, COALESCE(fusion_id, ''), created_at
+		FROM design_proposals WHERE id = ?`, id).Scan(&p.ID, &p.ProjectID, &p.Round, &p.Title, &p.Concept, &strategy, &palette, &p.Typography, &p.Difference, &p.Status, &score, &p.FusionID, &p.CreatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return domain.DesignProposal{}, ErrNotFound
 	}
@@ -440,6 +460,151 @@ func (r *MySQLRepository) CreateFeedback(ctx context.Context, f domain.Feedback)
 		(id, project_id, proposal_id, rating, comment, liked_items, disliked_items, must_change, optional_change)
 		VALUES (?, ?, NULLIF(?, ''), NULLIF(?, 0), ?, ?, ?, ?, ?)`, f.ID, f.ProjectID, f.ProposalID, f.Rating, f.Comment, liked, disliked, must, optional)
 	return err
+}
+
+func (r *MySQLRepository) CreateFusion(ctx context.Context, f domain.DesignFusion) error {
+	sourceIDs, err := marshalJSON(f.SourceProposalIDs)
+	if err != nil {
+		return err
+	}
+	sourceFeatures, err := marshalJSON(f.SourceFeatures)
+	if err != nil {
+		return err
+	}
+	selections, err := marshalJSON(f.FeatureSelections)
+	if err != nil {
+		return err
+	}
+	weights, err := marshalJSON(f.Weights)
+	if err != nil {
+		return err
+	}
+	constraints, err := marshalJSON(f.Constraints)
+	if err != nil {
+		return err
+	}
+	brief, err := marshalJSON(f.SynthesisBrief)
+	if err != nil {
+		return err
+	}
+	outputs, err := marshalJSON(f.OutputProposalIDs)
+	if err != nil {
+		return err
+	}
+	if f.ID == "" {
+		f.ID = newID()
+	}
+	if f.Version == 0 {
+		f.Version = 1
+	}
+	_, err = r.db.ExecContext(ctx, `INSERT INTO design_fusions
+		(id, project_id, name, status, source_proposal_ids, source_features, feature_selections, weights, constraints_json, synthesis_brief, output_proposal_ids, version)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, f.ID, f.ProjectID, f.Name, f.Status, sourceIDs, sourceFeatures, selections, weights, constraints, brief, outputs, f.Version)
+	return err
+}
+
+func (r *MySQLRepository) GetFusion(ctx context.Context, id string) (domain.DesignFusion, error) {
+	var f domain.DesignFusion
+	var sourceIDs, sourceFeatures, selections, weights, constraints, brief, outputs []byte
+	err := r.db.QueryRowContext(ctx, `SELECT id, project_id, name, status, source_proposal_ids, source_features, feature_selections, weights, constraints_json, synthesis_brief, output_proposal_ids, version, created_at, updated_at FROM design_fusions WHERE id = ?`, id).
+		Scan(&f.ID, &f.ProjectID, &f.Name, &f.Status, &sourceIDs, &sourceFeatures, &selections, &weights, &constraints, &brief, &outputs, &f.Version, &f.CreatedAt, &f.UpdatedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return domain.DesignFusion{}, ErrNotFound
+	}
+	if err != nil {
+		return domain.DesignFusion{}, err
+	}
+	if err := unmarshalJSON(sourceIDs, &f.SourceProposalIDs); err != nil {
+		return f, err
+	}
+	if err := unmarshalJSON(sourceFeatures, &f.SourceFeatures); err != nil {
+		return f, err
+	}
+	if err := unmarshalJSON(selections, &f.FeatureSelections); err != nil {
+		return f, err
+	}
+	if err := unmarshalJSON(weights, &f.Weights); err != nil {
+		return f, err
+	}
+	if err := unmarshalJSON(constraints, &f.Constraints); err != nil {
+		return f, err
+	}
+	if err := unmarshalJSON(brief, &f.SynthesisBrief); err != nil {
+		return f, err
+	}
+	if err := unmarshalJSON(outputs, &f.OutputProposalIDs); err != nil {
+		return f, err
+	}
+	return f, nil
+}
+
+func (r *MySQLRepository) ListFusions(ctx context.Context, projectID string) ([]domain.DesignFusion, error) {
+	rows, err := r.db.QueryContext(ctx, `SELECT id FROM design_fusions WHERE project_id = ? ORDER BY created_at DESC`, projectID)
+	if err != nil {
+		return nil, err
+	}
+	ids := make([]string, 0)
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			_ = rows.Close()
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return nil, err
+	}
+	_ = rows.Close()
+	result := make([]domain.DesignFusion, 0, len(ids))
+	for _, id := range ids {
+		fusion, err := r.GetFusion(ctx, id)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, fusion)
+	}
+	return result, rows.Err()
+}
+
+func (r *MySQLRepository) UpdateFusion(ctx context.Context, f domain.DesignFusion) error {
+	sourceIDs, err := marshalJSON(f.SourceProposalIDs)
+	if err != nil {
+		return err
+	}
+	sourceFeatures, err := marshalJSON(f.SourceFeatures)
+	if err != nil {
+		return err
+	}
+	selections, err := marshalJSON(f.FeatureSelections)
+	if err != nil {
+		return err
+	}
+	weights, err := marshalJSON(f.Weights)
+	if err != nil {
+		return err
+	}
+	constraints, err := marshalJSON(f.Constraints)
+	if err != nil {
+		return err
+	}
+	brief, err := marshalJSON(f.SynthesisBrief)
+	if err != nil {
+		return err
+	}
+	outputs, err := marshalJSON(f.OutputProposalIDs)
+	if err != nil {
+		return err
+	}
+	result, err := r.db.ExecContext(ctx, `UPDATE design_fusions SET name=?, status=?, source_proposal_ids=?, source_features=?, feature_selections=?, weights=?, constraints_json=?, synthesis_brief=?, output_proposal_ids=?, version=?, updated_at=CURRENT_TIMESTAMP(3) WHERE id=?`, f.Name, f.Status, sourceIDs, sourceFeatures, selections, weights, constraints, brief, outputs, f.Version, f.ID)
+	if err != nil {
+		return err
+	}
+	if affected, err := result.RowsAffected(); err == nil && affected == 0 {
+		return ErrNotFound
+	}
+	return nil
 }
 
 func marshalJSON(value any) ([]byte, error) { return json.Marshal(value) }

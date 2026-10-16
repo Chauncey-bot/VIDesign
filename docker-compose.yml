@@ -12,6 +12,7 @@ services:
       - mysql_data:/var/lib/mysql
       - ./migrations/001_init.sql:/docker-entrypoint-initdb.d/001_init.sql:ro
       - ./migrations/002_auth.sql:/docker-entrypoint-initdb.d/002_auth.sql:ro
+      - ./migrations/004_design_fusion.sql:/docker-entrypoint-initdb.d/004_design_fusion.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u root -proot --silent"]
       interval: 5s

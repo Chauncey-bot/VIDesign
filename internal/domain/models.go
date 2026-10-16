@@ -56,9 +56,37 @@ type DesignProposal struct {
 	ImageAssetIDs  []string       `json:"image_asset_ids"`
 	Difference     string         `json:"difference_summary"`
 	Status         string         `json:"status"`
+	FusionID       string         `json:"fusion_id,omitempty"`
 	CustomerScore  *int           `json:"customer_score,omitempty"`
 	CreatedAt      time.Time      `json:"created_at"`
 	Assets         []Asset        `json:"assets,omitempty"`
+}
+
+// FusionFeature is a customer-confirmed design decision extracted from one
+// of the source proposals. Keeping it structured makes the synthesis auditable.
+type FusionFeature struct {
+	Dimension        string `json:"dimension"`
+	Value            string `json:"value"`
+	SourceProposalID string `json:"source_proposal_id"`
+	Decision         string `json:"decision"` // keep, adapt, exclude
+	Weight           int    `json:"weight"`   // 0-100
+}
+
+type DesignFusion struct {
+	ID                string             `json:"id"`
+	ProjectID         string             `json:"project_id"`
+	Name              string             `json:"name"`
+	Status            string             `json:"status"`
+	SourceProposalIDs []string           `json:"source_proposal_ids"`
+	SourceFeatures    map[string]any     `json:"source_features"`
+	FeatureSelections []FusionFeature    `json:"feature_selections"`
+	Weights           map[string]float64 `json:"weights"`
+	Constraints       []string           `json:"constraints"`
+	SynthesisBrief    map[string]any     `json:"synthesis_brief"`
+	OutputProposalIDs []string           `json:"output_proposal_ids"`
+	Version           int                `json:"version"`
+	CreatedAt         time.Time          `json:"created_at"`
+	UpdatedAt         time.Time          `json:"updated_at"`
 }
 
 type Asset struct {

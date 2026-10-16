@@ -124,6 +124,41 @@ PATCH 示例：
 }
 ```
 
+## 多方案融合
+
+融合流程把多个已生成方案保存为一个可追溯的融合会话。会话记录来源方案、客户确认的保留/调整/排除项、权重、约束和输出方案。
+
+查看项目融合记录：
+
+```text
+GET /projects/{project_id}/fusions
+```
+
+创建融合会话：
+
+```json
+{
+  "name": "东方文化 × 现代高端平衡版",
+  "source_proposal_ids": ["proposal-a", "proposal-b"],
+  "source_features": {"proposals": [{"id":"proposal-a","title":"宫廷朱砂"}]},
+  "feature_selections": [
+    {"dimension":"strategy","value":"保留方案 A 的文化叙事","source_proposal_id":"proposal-a","decision":"keep","weight":90},
+    {"dimension":"visual","value":"采用方案 B 的深色金色调","source_proposal_id":"proposal-b","decision":"adapt","weight":80}
+  ],
+  "weights": {"strategy":0.4,"visual":0.35,"production":0.25},
+  "constraints": ["控制专色数量", "适配天地盖盒结构"]
+}
+```
+
+```text
+POST /projects/{project_id}/fusions
+GET  /projects/{project_id}/fusions/{fusion_id}
+PATCH /projects/{project_id}/fusions/{fusion_id}
+POST /projects/{project_id}/fusions/{fusion_id}/generate
+```
+
+`generate` 返回异步 `task_id`。任务完成后，融合方案会出现在 `GET /projects/{project_id}/proposals` 中，并带有 `fusion_id`；融合记录的 `output_proposal_ids` 保存来源与输出的关系。
+
 ## 启动二轮设计
 
 `POST /projects/{project_id}/revision`

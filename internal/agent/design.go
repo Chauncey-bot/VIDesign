@@ -38,6 +38,37 @@ func (a *LLMConcept) Run(ctx context.Context, input RunInput) (RunOutput, error)
 	return RunOutput{AgentName: a.Name(), Payload: payload, Usage: Usage{Provider: result.Provider, Model: result.Model, InputTokens: result.InputTokens, OutputTokens: result.OutputTokens}}, nil
 }
 
+// LLMFusion turns customer-confirmed source decisions into one coherent,
+// production-aware proposal. It deliberately receives structured source data
+// so the model cannot silently lose the provenance of a selected element.
+type LLMFusion struct{ provider LLMProvider }
+
+func NewLLMFusion(provider LLMProvider) *LLMFusion { return &LLMFusion{provider: provider} }
+func (a *LLMFusion) Name() string                  { return "fusion" }
+
+func (a *LLMFusion) Run(ctx context.Context, input RunInput) (RunOutput, error) {
+	data, err := json.Marshal(input.Payload)
+	if err != nil {
+		return RunOutput{}, err
+	}
+	result, err := a.provider.Chat(ctx, ChatRequest{
+		SystemPrompt: `你是包装设计融合总监。请依据多个已有方案、客户确认的保留/调整/排除项、权重和生产约束，整合成一套统一的新方案。每个视觉决策必须服务于同一个品牌叙事，避免元素堆叠。只输出 JSON，字段必须包含 title、concept、design_strategy（对象）、color_palette（字符串数组）、typography、difference_summary、image_prompt。difference_summary 要说明采用了哪些来源方案优点以及做了哪些平衡。`,
+		Messages:     []Message{{Role: "user", Content: string(data)}},
+		Temperature:  0.65,
+	})
+	if err != nil {
+		return RunOutput{}, err
+	}
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(result.Content), &payload); err != nil {
+		return RunOutput{}, fmt.Errorf("decode fusion JSON: %w", err)
+	}
+	if _, ok := payload["title"].(string); !ok {
+		return RunOutput{}, fmt.Errorf("fusion output missing title")
+	}
+	return RunOutput{AgentName: a.Name(), Payload: payload, Usage: Usage{Provider: result.Provider, Model: result.Model, InputTokens: result.InputTokens, OutputTokens: result.OutputTokens}}, nil
+}
+
 type RevisionInput struct {
 	Brief    map[string]any `json:"brief"`
 	Proposal map[string]any `json:"proposal"`

@@ -59,11 +59,12 @@ func main() {
 	}
 	flow := workflow.NewIntakeWorkflow(repo, agent.NewLLMIntake(llm))
 	image := agent.NewOpenAICompatibleImage(cfg.ImageBaseURL, cfg.ImageAPIKey, cfg.ImageModel)
-	design := workflow.NewDesignWorkflow(repo, agent.NewLLMConcept(llm), agent.NewLLMRevision(llm), image)
+	design := workflow.NewDesignWorkflow(repo, agent.NewLLMConcept(llm), agent.NewLLMRevision(llm), image, agent.NewLLMFusion(llm))
 	queue := taskqueue.NewRedis(asynq.RedisClientOpt{Addr: cfg.RedisAddr, Password: cfg.RedisPassword, DB: cfg.RedisDB}, cfg.RedisQueue, cfg.RedisConcurrency, map[string]taskqueue.Handler{
 		workflow.ChatTask:     flow.Handle,
 		workflow.GenerateTask: design.Handle,
 		workflow.RevisionTask: design.Handle,
+		workflow.FusionTask:   design.Handle,
 	})
 	server := httpapi.NewServer(db, queue, authManager)
 	defer server.Close()

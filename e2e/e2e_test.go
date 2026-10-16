@@ -93,9 +93,10 @@ func TestProjectChatPersistsBrief(t *testing.T) {
 	requestJSON(t, client, http.MethodPost, baseURL+"/api/v1/projects/"+project.ID+"/generate", map[string]any{"proposal_count": 3}, &generationTask)
 	pollSucceeded(t, client, baseURL, generationTask.TaskID)
 	var proposals []struct {
-		ID     string `json:"id"`
-		Round  int    `json:"round"`
-		Assets []struct {
+		ID       string `json:"id"`
+		Round    int    `json:"round"`
+		FusionID string `json:"fusion_id"`
+		Assets   []struct {
 			ID         string `json:"id"`
 			StorageURL string `json:"storage_url"`
 		} `json:"assets"`
@@ -103,6 +104,39 @@ func TestProjectChatPersistsBrief(t *testing.T) {
 	requestJSON(t, client, http.MethodGet, baseURL+"/api/v1/projects/"+project.ID+"/proposals", nil, &proposals)
 	if len(proposals) != 3 || proposals[0].Round != 1 || len(proposals[0].Assets) == 0 {
 		t.Fatalf("unexpected first round proposals: %#v", proposals)
+	}
+	var fusion struct {
+		ID                string   `json:"id"`
+		Status            string   `json:"status"`
+		SourceProposalIDs []string `json:"source_proposal_ids"`
+	}
+	requestJSON(t, client, http.MethodPost, baseURL+"/api/v1/projects/"+project.ID+"/fusions", map[string]any{
+		"name":                "自然东方 × 高端礼赠融合版",
+		"source_proposal_ids": []string{proposals[0].ID, proposals[1].ID},
+		"source_features":     map[string]any{"proposals": []string{proposals[0].ID, proposals[1].ID}},
+		"feature_selections":  []map[string]any{{"dimension": "strategy", "value": "保留自然东方叙事", "source_proposal_id": proposals[0].ID, "decision": "keep", "weight": 90}},
+		"weights":             map[string]float64{"strategy": 0.4, "visual": 0.35, "production": 0.25},
+		"constraints":         []string{"控制装饰密度"},
+	}, &fusion)
+	if fusion.ID == "" || len(fusion.SourceProposalIDs) != 2 || fusion.Status != "draft" {
+		t.Fatalf("unexpected fusion: %#v", fusion)
+	}
+	var fusionTask struct {
+		TaskID string `json:"task_id"`
+	}
+	requestJSON(t, client, http.MethodPost, baseURL+"/api/v1/projects/"+project.ID+"/fusions/"+fusion.ID+"/generate", nil, &fusionTask)
+	pollSucceeded(t, client, baseURL, fusionTask.TaskID)
+	var fusionAfter struct {
+		Status            string   `json:"status"`
+		OutputProposalIDs []string `json:"output_proposal_ids"`
+	}
+	requestJSON(t, client, http.MethodGet, baseURL+"/api/v1/projects/"+project.ID+"/fusions/"+fusion.ID, nil, &fusionAfter)
+	if fusionAfter.Status != "completed" || len(fusionAfter.OutputProposalIDs) != 1 {
+		t.Fatalf("fusion did not complete: %#v", fusionAfter)
+	}
+	requestJSON(t, client, http.MethodGet, baseURL+"/api/v1/projects/"+project.ID+"/proposals?round=2", nil, &proposals)
+	if len(proposals) != 1 || proposals[0].FusionID != fusion.ID || len(proposals[0].Assets) == 0 {
+		t.Fatalf("unexpected fusion proposal: %#v", proposals)
 	}
 
 	proposalID := proposals[0].ID
@@ -112,8 +146,8 @@ func TestProjectChatPersistsBrief(t *testing.T) {
 	}
 	requestMultipartRevision(t, client, baseURL+"/api/v1/projects/"+project.ID+"/revision", proposalID, map[string]any{"rating": 4, "comment": "减少插画复杂度并突出低糖卖点"}, []namedFile{{name: "feedback-reference.png", data: []byte{1, 2, 3}}}, &revisionTask)
 	pollSucceeded(t, client, baseURL, revisionTask.TaskID)
-	requestJSON(t, client, http.MethodGet, baseURL+"/api/v1/projects/"+project.ID+"/proposals?round=2", nil, &proposals)
-	if len(proposals) != 1 || proposals[0].Round != 2 || len(proposals[0].Assets) == 0 {
+	requestJSON(t, client, http.MethodGet, baseURL+"/api/v1/projects/"+project.ID+"/proposals?round=3", nil, &proposals)
+	if len(proposals) != 1 || proposals[0].Round != 3 || len(proposals[0].Assets) == 0 {
 		t.Fatalf("unexpected revision proposals: %#v", proposals)
 	}
 	assetResponse := requestBytes(t, client, http.MethodGet, baseURL+"/api/v1/assets/"+proposals[0].Assets[0].ID)

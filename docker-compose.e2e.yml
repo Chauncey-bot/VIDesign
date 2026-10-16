@@ -13,6 +13,9 @@ services:
       LLM_BASE_URL: "http://mock-llm:8080/v1"
       LLM_API_KEY: "e2e-key"
       LLM_MODEL: "mock-intake"
+      IMAGE_BASE_URL: "http://mock-llm:8080/v1"
+      IMAGE_API_KEY: "e2e-key"
+      IMAGE_MODEL: "mock-image"
     depends_on:
       mock-llm:
         condition: service_healthy
