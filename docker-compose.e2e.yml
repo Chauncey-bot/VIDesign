@@ -1,0 +1,18 @@
+services:
+  mock-llm:
+    build:
+      context: ./e2e/mock-llm
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:8080/healthz | grep -q 'ok'"]
+      interval: 3s
+      timeout: 2s
+      retries: 20
+
+  app:
+    environment:
+      LLM_BASE_URL: "http://mock-llm:8080/v1"
+      LLM_API_KEY: "e2e-key"
+      LLM_MODEL: "mock-intake"
+    depends_on:
+      mock-llm:
+        condition: service_healthy

@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Packaging AI · 包装设计工作台</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><span class="brand-mark">P</span><div><strong>Packaging AI</strong><small>包装设计工作台</small></div></div>
+    <div class="topbar-status"><span class="status-dot"></span><span id="healthText">正在检查服务</span></div>
+  </header>
+
+  <main class="shell">
+    <aside class="sidebar">
+      <div class="sidebar-heading"><span>项目工作区</span><button id="resetBtn" class="icon-button" title="重置当前工作区">↻</button></div>
+      <section id="authCard" class="create-card">
+        <div class="eyebrow">客户登录</div><h2>管理你的设计项目</h2><p>登录后可以访问历史项目和持续迭代方案。</p>
+        <form id="authForm"><label>邮箱<input id="authEmail" type="email" required placeholder="you@example.com"></label><label>密码<input id="authPassword" type="password" minlength="8" required placeholder="至少 8 位"></label><button class="primary full" type="submit">登录 / 注册 <span>→</span></button></form>
+      </section>
+      <section id="accountMeta" class="project-meta hidden"><div class="eyebrow">已登录</div><h2 id="accountEmail">—</h2><button id="logoutBtn" class="secondary full">退出登录</button></section>
+      <section id="projectListCard" class="project-meta hidden"><div class="eyebrow">历史项目</div><div id="projectList" class="project-list"></div></section>
+      <section id="projectCreate" class="create-card hidden">
+        <div class="eyebrow">新项目</div>
+        <h2>开始一次包装设计</h2>
+        <p>先创建项目，再通过对话让 Agent 整理设计 Brief。</p>
+        <form id="projectForm">
+          <label>项目名称<input id="projectName" required placeholder="例如：松萝茶包装升级"></label>
+          <label>客户 ID <span class="optional">可选</span><input id="customerId" placeholder="customer-id"></label>
+          <button class="primary full" type="submit">创建项目 <span>→</span></button>
+        </form>
+      </section>
+      <section id="projectMeta" class="project-meta hidden">
+        <div class="eyebrow">当前项目</div>
+        <h2 id="projectTitle">—</h2>
+        <div class="project-id" id="projectId">—</div>
+        <div class="meta-row"><span>状态</span><strong id="projectStatus">draft</strong></div>
+        <div class="meta-row"><span>设计轮次</span><strong id="projectRound">0</strong></div>
+        <button id="newProjectBtn" class="secondary full">新建项目</button>
+      </section>
+      <div class="sidebar-foot">AI 生成结果需要设计师审核后用于生产。</div>
+    </aside>
+
+    <section class="workspace">
+      <div id="emptyState" class="empty-state">
+        <div class="empty-orbit"><span>✦</span></div>
+        <h1>把一个想法变成一套包装</h1>
+        <p>创建项目后，和需求采集 Agent 对话。系统会持续整理 Brief、追问缺失信息，并准备后续设计方案。</p>
+        <button class="primary" id="emptyCreateBtn">创建第一个项目 <span>→</span></button>
+      </div>
+
+      <div id="workspaceContent" class="hidden">
+        <div class="workspace-header">
+          <div><div class="eyebrow">设计项目 / 工作台</div><h1 id="workspaceTitle">—</h1></div>
+          <div class="round-pill">ROUND <strong id="headerRound">0</strong></div>
+        </div>
+
+        <nav class="tabs" role="tablist">
+          <button class="tab active" data-tab="intake">需求采集</button>
+          <button class="tab" data-tab="brief">设计 Brief <span id="briefBadge" class="tab-badge">0%</span></button>
+          <button class="tab" data-tab="proposals">方案与反馈</button>
+        </nav>
+
+        <section id="tab-intake" class="tab-panel active">
+          <div class="intake-grid">
+            <div class="chat-card card">
+              <div class="card-header"><div><div class="eyebrow">AI 需求采集</div><h2>把你的想法告诉我</h2></div><span class="live-label"><i></i> Agent 在线</span></div>
+              <div id="chatMessages" class="chat-messages"><div class="message agent"><div class="avatar">P</div><div><div class="message-author">Packaging AI</div><p>你好！先告诉我产品是什么、准备卖给谁，以及你希望包装传达什么感觉。</p></div></div></div>
+              <form id="chatForm" class="chat-form"><textarea id="chatInput" rows="2" required placeholder="例如：我们要做一套年轻人喜欢的红茶礼盒，希望有东方感，但不要太传统……"></textarea><div class="chat-attachment"><label for="documentInput">＋ Word 需求</label><input id="documentInput" type="file" accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document"><span id="documentName"></span></div><button class="send-button" type="submit">发送 <span>↗</span></button></form>
+              <div id="taskNotice" class="task-notice hidden"></div>
+            </div>
+            <div class="side-insight card"><div class="eyebrow">采集进度</div><div class="progress-ring" id="progressRing"><strong id="progressValue">0%</strong><span>Brief 完整度</span></div><div id="nextQuestions" class="question-list"><div class="muted">完成几轮对话后，这里会显示 Agent 的下一步追问。</div></div></div>
+          </div>
+        </section>
+
+        <section id="tab-brief" class="tab-panel">
+          <div class="section-heading"><div><div class="eyebrow">结构化需求</div><h2>设计 Brief</h2></div><button id="refreshBriefBtn" class="secondary">刷新 Brief</button></div>
+          <div class="brief-grid card"><div class="brief-field wide"><label>产品与品牌信息</label><pre id="briefProduct">尚未采集</pre></div><div class="brief-field"><label>目标客户</label><p id="briefAudience">—</p></div><div class="brief-field"><label>市场</label><p id="briefMarket">—</p></div><div class="brief-field"><label>材质 / 工艺</label><p id="briefMaterial">—</p></div><div class="brief-field"><label>包装规格</label><pre id="briefSpec">—</pre></div><div class="brief-field wide"><label>必填文字</label><div id="briefRequired" class="tag-list">—</div></div><div class="brief-field wide"><label>约束条件</label><div id="briefConstraints" class="tag-list">—</div></div></div>
+        </section>
+
+        <section id="tab-proposals" class="tab-panel">
+          <div class="section-heading"><div><div class="eyebrow">设计迭代</div><h2>方案与反馈</h2></div><div><button id="exportPdfBtn" class="secondary">下载 PDF</button><button id="exportMdBtn" class="secondary">下载说明</button><button id="generateBtn" class="primary">生成第一轮方案 <span>→</span></button><button id="refreshProposalsBtn" class="secondary">刷新方案</button></div></div>
+          <div id="proposalList" class="proposal-list"><div class="empty-panel"><span>✦</span><p>第一轮方案还没有生成。完成 Brief 后，可以从这里查看方案并提交反馈。</p></div></div>
+          <div class="feedback-card card"><div class="eyebrow">客户反馈</div><h3>告诉我们要如何调整</h3><form id="feedbackForm" class="feedback-form"><label>方案 ID<input id="feedbackProposalId" required placeholder="选择方案后自动填入"></label><label>评分<select id="feedbackRating"><option value="5">5 · 非常喜欢</option><option value="4">4 · 喜欢</option><option value="3">3 · 需要调整</option><option value="2">2 · 不太符合</option><option value="1">1 · 不符合</option></select></label><label class="full-row">修改意见<textarea id="feedbackComment" rows="3" required placeholder="哪些地方喜欢？哪些地方必须修改？"></textarea></label><button class="primary" type="submit">提交反馈并生成二轮 <span>→</span></button></form><div id="feedbackResult" class="form-result hidden"></div></div>
+        </section>
+      </div>
+    </section>
+  </main>
+  <div id="toast" class="toast"></div>
+  <script src="/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,10 @@
+.env
+*.log
+tmp/
+output/
+.DS_Store
+.build/
+.codex-finalizer/
+.ppt-build/
+.ppt-output/
+.output/
