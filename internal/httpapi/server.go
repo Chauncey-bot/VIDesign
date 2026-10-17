@@ -108,6 +108,10 @@ func (s *Server) projectRoutes(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if len(parts) == 1 && r.Method == http.MethodGet {
+		if _, err := s.reconcileBriefState(r.Context(), projectID); err != nil && err != repository.ErrNotFound {
+			writeDBError(w, err)
+			return
+		}
 		project, err := s.repo.Get(r.Context(), projectID)
 		if err != nil {
 			writeDBError(w, err)
@@ -614,7 +618,7 @@ func (s *Server) taskRoutes(w http.ResponseWriter, r *http.Request) {
 func (s *Server) brief(w http.ResponseWriter, r *http.Request, projectID string) {
 	switch r.Method {
 	case http.MethodGet:
-		brief, err := s.repo.GetLatest(r.Context(), projectID)
+		brief, err := s.reconcileBriefState(r.Context(), projectID)
 		if err != nil {
 			writeDBError(w, err)
 			return
@@ -638,6 +642,25 @@ func (s *Server) brief(w http.ResponseWriter, r *http.Request, projectID string)
 	default:
 		writeError(w, http.StatusMethodNotAllowed, "method_not_allowed")
 	}
+}
+
+func (s *Server) reconcileBriefState(ctx context.Context, projectID string) (domain.Brief, error) {
+	brief, err := s.repo.ReconcileLatestBrief(ctx, projectID)
+	if err != nil {
+		return domain.Brief{}, err
+	}
+	if brief.CompletionScore >= 80 {
+		project, err := s.repo.Get(ctx, projectID)
+		if err != nil {
+			return domain.Brief{}, err
+		}
+		if project.Status == domain.ProjectCollecting {
+			if err := s.repo.UpdateStatus(ctx, projectID, domain.ProjectBriefReady); err != nil {
+				return domain.Brief{}, err
+			}
+		}
+	}
+	return brief, nil
 }
 
 func (s *Server) proposalRoutes(w http.ResponseWriter, r *http.Request) {

@@ -237,6 +237,143 @@ func (r *MySQLRepository) GetLatest(ctx context.Context, projectID string) (doma
 	return b, nil
 }
 
+// ReconcileLatestBrief upgrades older or Agent-produced rich product_info into
+// the stable fields used by scoring and the UI, then persists a new snapshot
+// when the normalized values change.
+func (r *MySQLRepository) ReconcileLatestBrief(ctx context.Context, projectID string) (domain.Brief, error) {
+	brief, err := r.GetLatest(ctx, projectID)
+	if err != nil {
+		return domain.Brief{}, err
+	}
+	if !normalizeBriefSnapshot(&brief) {
+		return brief, nil
+	}
+	brief.ID = newID()
+	brief.Version++
+	if err := r.Upsert(ctx, brief); err != nil {
+		return domain.Brief{}, err
+	}
+	return brief, nil
+}
+
+func normalizeBriefSnapshot(brief *domain.Brief) bool {
+	changed := false
+	if brief.ProductInfo == nil {
+		brief.ProductInfo = map[string]any{}
+	}
+	if brief.Audience == "" {
+		if value := briefString(brief.ProductInfo["target_customers"]); value != "" {
+			brief.Audience, changed = value, true
+		}
+	}
+	if brief.Market == "" {
+		for _, key := range []string{"market", "gifting_scenario", "usage_scenarios"} {
+			if value := briefString(brief.ProductInfo[key]); value != "" {
+				brief.Market, changed = value, true
+				break
+			}
+		}
+	}
+	if value := brief.ProductInfo["packaging_type"]; value != nil && brief.ProductInfo["package_type"] == nil {
+		brief.ProductInfo["package_type"] = value
+		changed = true
+	}
+	if len(brief.RequiredText) == 0 {
+		if values := briefTextValues(brief.ProductInfo["required_packaging_text"]); len(values) > 0 {
+			brief.RequiredText, changed = values, true
+		}
+	}
+	if len(brief.Constraints) == 0 {
+		if values := briefTextValues(brief.ProductInfo["regulatory_requirements"]); len(values) > 0 {
+			brief.Constraints, changed = values, true
+		}
+	}
+	if len(brief.PackageSpec) == 0 {
+		if value, ok := brief.ProductInfo["package_spec"].(map[string]any); ok && len(value) > 0 {
+			brief.PackageSpec, changed = value, true
+		}
+	}
+	score := briefScore(brief)
+	if score != brief.CompletionScore {
+		brief.CompletionScore, changed = score, true
+	}
+	return changed
+}
+
+func briefScore(brief *domain.Brief) int {
+	filled := 0
+	if briefString(brief.ProductInfo["product_category"]) != "" {
+		filled++
+	}
+	if briefString(brief.ProductInfo["product_name"]) != "" {
+		filled++
+	}
+	if strings.TrimSpace(brief.Audience) != "" {
+		filled++
+	}
+	if briefString(brief.ProductInfo["package_type"]) != "" {
+		filled++
+	}
+	if len(brief.RequiredText) > 0 {
+		filled++
+	}
+	if strings.TrimSpace(brief.Material) != "" {
+		filled++
+	}
+	if len(brief.PackageSpec) > 0 {
+		filled++
+	}
+	return filled * 100 / 7
+}
+
+func briefString(value any) string {
+	if value == nil {
+		return ""
+	}
+	if values, ok := value.([]any); ok {
+		parts := make([]string, 0, len(values))
+		for _, item := range values {
+			if text := briefString(item); text != "" {
+				parts = append(parts, text)
+			}
+		}
+		return strings.Join(parts, "、")
+	}
+	return strings.TrimSpace(fmt.Sprint(value))
+}
+
+func briefTextValues(value any) []string {
+	if value == nil {
+		return nil
+	}
+	if items, ok := value.([]any); ok {
+		values := make([]string, 0, len(items))
+		for _, item := range items {
+			if text := briefString(item); text != "" {
+				values = append(values, text)
+			}
+		}
+		return values
+	}
+	if items, ok := value.(map[string]any); ok {
+		values := make([]string, 0, len(items))
+		for key, item := range items {
+			text := briefString(item)
+			if text == "" {
+				text = key
+			} else {
+				text = key + "：" + text
+			}
+			values = append(values, text)
+		}
+		return values
+	}
+	if text := briefString(value); text != "" {
+		return []string{text}
+	}
+	return nil
+}
+
 func (r *MySQLRepository) Upsert(ctx context.Context, b domain.Brief) error {
 	productInfo, err := marshalJSON(b.ProductInfo)
 	if err != nil {
