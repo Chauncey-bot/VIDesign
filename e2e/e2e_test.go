@@ -90,19 +90,20 @@ func TestProjectChatPersistsBrief(t *testing.T) {
 	var generationTask struct {
 		TaskID string `json:"task_id"`
 	}
-	requestJSON(t, client, http.MethodPost, baseURL+"/api/v1/projects/"+project.ID+"/generate", map[string]any{"proposal_count": 3}, &generationTask)
+	requestJSON(t, client, http.MethodPost, baseURL+"/api/v1/projects/"+project.ID+"/generate", map[string]any{"proposal_count": 3, "product_name": "松萝茶·山岚玉青"}, &generationTask)
 	pollSucceeded(t, client, baseURL, generationTask.TaskID)
 	var proposals []struct {
-		ID       string `json:"id"`
-		Round    int    `json:"round"`
-		FusionID string `json:"fusion_id"`
-		Assets   []struct {
+		ID          string `json:"id"`
+		Round       int    `json:"round"`
+		ProductName string `json:"product_name"`
+		FusionID    string `json:"fusion_id"`
+		Assets      []struct {
 			ID         string `json:"id"`
 			StorageURL string `json:"storage_url"`
 		} `json:"assets"`
 	}
 	requestJSON(t, client, http.MethodGet, baseURL+"/api/v1/projects/"+project.ID+"/proposals", nil, &proposals)
-	if len(proposals) != 3 || proposals[0].Round != 1 || len(proposals[0].Assets) == 0 {
+	if len(proposals) != 3 || proposals[0].Round != 1 || proposals[0].ProductName != "松萝茶·山岚玉青" || proposals[1].ProductName != "松萝茶·山岚玉青" || proposals[2].ProductName != "松萝茶·山岚玉青" || len(proposals[0].Assets) == 0 {
 		t.Fatalf("unexpected first round proposals: %#v", proposals)
 	}
 	var fusion struct {

@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Packaging AI · 包装设计工作台</title>
-  <link rel="stylesheet" href="/styles.css?v=20261017-fusion-padding-thumb-card-toggle">
+  <link rel="stylesheet" href="/styles.css?v=20261017-proposal-round-groups">
 </head>
 <body>
   <header class="topbar">
@@ -90,6 +90,7 @@
 
         <section id="tab-proposals" class="tab-panel">
           <div class="section-heading"><div><div class="eyebrow">设计迭代</div><h2>方案与反馈</h2></div><div><button id="exportPdfBtn" class="secondary">下载 PDF</button><button id="exportMdBtn" class="secondary">下载说明</button><button id="bundleDownloadBtn" class="secondary">打包下载全部方案 + PDF</button><button id="batchDownloadBtn" class="secondary">批量下载图片</button><button id="generateBtn" class="primary">生成第一轮 9 套方案 <span>→</span></button><button id="refreshProposalsBtn" class="secondary">刷新方案</button></div></div>
+          <div class="generation-options"><label for="generationProductName">产品名称 <span class="optional">可选</span><input id="generationProductName" maxlength="255" placeholder="不填写时，每套方案自动生成不同产品名称"></label><span>指定后，系统会将产品名称纳入包装文字、识别性和视觉设计考虑。</span></div>
           <div id="designProgress" class="design-progress hidden"><span class="progress-spinner"></span><span id="designProgressText">方案任务准备中…</span></div>
           <div id="proposalList" class="proposal-list"><div class="empty-panel"><span>✦</span><p>第一轮方案还没有生成。完成 Brief 后，可以从这里查看方案并提交反馈。</p></div></div>
           <div class="fusion-card card">
@@ -112,6 +113,6 @@
     </section>
   </main>
   <div id="toast" class="toast"></div>
-  <script src="/app.js?v=20261017-fusion-layout-thumb-toggle-download-hover"></script>
+  <script src="/app.js?v=20261017-proposal-round-groups-product-name"></script>
 </body>
 </html>

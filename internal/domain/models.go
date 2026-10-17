@@ -48,6 +48,7 @@ type DesignProposal struct {
 	ID             string         `json:"id"`
 	ProjectID      string         `json:"project_id"`
 	Round          int            `json:"round"`
+	ProductName    string         `json:"product_name,omitempty"`
 	Title          string         `json:"title"`
 	Concept        string         `json:"concept"`
 	DesignStrategy map[string]any `json:"design_strategy"`

@@ -15,6 +15,13 @@ func (fusionTestProvider) Chat(_ context.Context, request ChatRequest) (ChatResp
 	return ChatResponse{Content: `{"title":"融合方向","concept":"保留来源优点","design_strategy":{"direction":"平衡"},"color_palette":["#123456"],"typography":"现代宋体","difference_summary":"已记录来源取舍","image_prompt":"balanced packaging"}`, Provider: "test", Model: "test-model"}, nil
 }
 
+type conceptTestProvider struct{ request ChatRequest }
+
+func (p *conceptTestProvider) Chat(_ context.Context, request ChatRequest) (ChatResponse, error) {
+	p.request = request
+	return ChatResponse{Content: `{"proposals":[{"product_name":"松萝茶·山岚玉青","title":"自然东方","concept":"保留山岚玉青主色","design_strategy":{"direction":"自然东方"},"color_palette":["#2e6654"],"typography":"现代宋体","difference_summary":"清晰克制","image_prompt":"jade green tea packaging"}]}`, Provider: "test", Model: "test-model"}, nil
+}
+
 func TestLLMFusionProducesAuditableProposal(t *testing.T) {
 	agent := NewLLMFusion(fusionTestProvider{})
 	result, err := agent.Run(context.Background(), RunInput{Payload: map[string]any{
@@ -26,5 +33,24 @@ func TestLLMFusionProducesAuditableProposal(t *testing.T) {
 	}
 	if result.AgentName != "fusion" || result.Payload["title"] != "融合方向" {
 		t.Fatalf("unexpected fusion result: %#v", result)
+	}
+}
+
+func TestLLMConceptIncludesSpecifiedProductName(t *testing.T) {
+	provider := &conceptTestProvider{}
+	concept := NewLLMConcept(provider)
+	result, err := concept.Run(context.Background(), RunInput{Payload: map[string]any{
+		"brief":          map[string]any{"product_name": "Brief 中的名称"},
+		"proposal_count": 1,
+		"product_name":   "松萝茶·山岚玉青",
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Payload["proposals"] == nil || !strings.Contains(provider.request.Messages[0].Content, "松萝茶·山岚玉青") {
+		t.Fatalf("product name was not included in concept request: %#v", provider.request)
+	}
+	if !strings.Contains(provider.request.SystemPrompt, "product_name") {
+		t.Fatalf("product_name field missing from system prompt: %s", provider.request.SystemPrompt)
 	}
 }

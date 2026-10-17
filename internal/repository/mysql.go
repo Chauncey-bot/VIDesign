@@ -64,6 +64,10 @@ func (r *MySQLRepository) EnsureAuthSchema(ctx context.Context) error {
 	if err != nil && !strings.Contains(strings.ToLower(err.Error()), "duplicate column") {
 		return err
 	}
+	_, err = r.db.ExecContext(ctx, `ALTER TABLE design_proposals ADD COLUMN product_name VARCHAR(255) NULL`)
+	if err != nil && !strings.Contains(strings.ToLower(err.Error()), "duplicate column") {
+		return err
+	}
 	if _, err := r.db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS design_fusions (
 		id CHAR(36) NOT NULL, project_id CHAR(36) NOT NULL, name VARCHAR(255) NOT NULL,
 		status VARCHAR(64) NOT NULL DEFAULT 'draft', source_proposal_ids JSON NOT NULL,
@@ -282,8 +286,8 @@ func (r *MySQLRepository) CreateProposal(ctx context.Context, p domain.DesignPro
 		p.ID = newID()
 	}
 	_, err = r.db.ExecContext(ctx, `INSERT INTO design_proposals
-		(id, project_id, round_no, title, concept, design_strategy, color_palette, typography, difference_summary, status, fusion_id, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULLIF(?, ''), CURRENT_TIMESTAMP(3))`, p.ID, p.ProjectID, p.Round, p.Title, p.Concept, strategy, palette, p.Typography, p.Difference, p.Status, p.FusionID)
+		(id, project_id, round_no, product_name, title, concept, design_strategy, color_palette, typography, difference_summary, status, fusion_id, created_at)
+		VALUES (?, ?, ?, NULLIF(?, ''), ?, ?, ?, ?, ?, ?, ?, NULLIF(?, ''), CURRENT_TIMESTAMP(3))`, p.ID, p.ProjectID, p.Round, p.ProductName, p.Title, p.Concept, strategy, palette, p.Typography, p.Difference, p.Status, p.FusionID)
 	return err
 }
 
@@ -338,7 +342,7 @@ func (r *MySQLRepository) GetAssets(ctx context.Context, ids []string) ([]domain
 }
 
 func (r *MySQLRepository) ListProposals(ctx context.Context, projectID string, round int) ([]domain.DesignProposal, error) {
-	query := `SELECT id, project_id, round_no, title, concept, design_strategy, color_palette, typography, difference_summary, status, customer_score, COALESCE(fusion_id, ''), created_at FROM design_proposals WHERE project_id = ?`
+	query := `SELECT id, project_id, round_no, COALESCE(product_name, ''), title, concept, design_strategy, color_palette, typography, difference_summary, status, customer_score, COALESCE(fusion_id, ''), created_at FROM design_proposals WHERE project_id = ?`
 	args := []any{projectID}
 	if round > 0 {
 		query += " AND round_no = ?"
@@ -355,7 +359,7 @@ func (r *MySQLRepository) ListProposals(ctx context.Context, projectID string, r
 		var p domain.DesignProposal
 		var strategy, palette []byte
 		var score sql.NullInt64
-		if err := rows.Scan(&p.ID, &p.ProjectID, &p.Round, &p.Title, &p.Concept, &strategy, &palette, &p.Typography, &p.Difference, &p.Status, &score, &p.FusionID, &p.CreatedAt); err != nil {
+		if err := rows.Scan(&p.ID, &p.ProjectID, &p.Round, &p.ProductName, &p.Title, &p.Concept, &strategy, &palette, &p.Typography, &p.Difference, &p.Status, &score, &p.FusionID, &p.CreatedAt); err != nil {
 			return nil, err
 		}
 		if score.Valid {
@@ -382,8 +386,8 @@ func (r *MySQLRepository) GetProposal(ctx context.Context, id string) (domain.De
 	var p domain.DesignProposal
 	var strategy, palette []byte
 	var score sql.NullInt64
-	err := r.db.QueryRowContext(ctx, `SELECT id, project_id, round_no, title, concept, design_strategy, color_palette, typography, difference_summary, status, customer_score, COALESCE(fusion_id, ''), created_at
-		FROM design_proposals WHERE id = ?`, id).Scan(&p.ID, &p.ProjectID, &p.Round, &p.Title, &p.Concept, &strategy, &palette, &p.Typography, &p.Difference, &p.Status, &score, &p.FusionID, &p.CreatedAt)
+	err := r.db.QueryRowContext(ctx, `SELECT id, project_id, round_no, COALESCE(product_name, ''), title, concept, design_strategy, color_palette, typography, difference_summary, status, customer_score, COALESCE(fusion_id, ''), created_at
+		FROM design_proposals WHERE id = ?`, id).Scan(&p.ID, &p.ProjectID, &p.Round, &p.ProductName, &p.Title, &p.Concept, &strategy, &palette, &p.Typography, &p.Difference, &p.Status, &score, &p.FusionID, &p.CreatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return domain.DesignProposal{}, ErrNotFound
 	}

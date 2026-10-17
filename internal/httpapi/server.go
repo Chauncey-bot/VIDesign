@@ -154,7 +154,8 @@ func (s *Server) projectRoutes(w http.ResponseWriter, r *http.Request) {
 	}
 	if len(parts) == 2 && parts[1] == "generate" && r.Method == http.MethodPost {
 		var req struct {
-			ProposalCount int `json:"proposal_count"`
+			ProposalCount int    `json:"proposal_count"`
+			ProductName   string `json:"product_name"`
 		}
 		if err := decodeBody(r, &req); err != nil && !errors.Is(err, io.EOF) {
 			writeError(w, http.StatusBadRequest, "invalid generate request")
@@ -163,7 +164,13 @@ func (s *Server) projectRoutes(w http.ResponseWriter, r *http.Request) {
 		if req.ProposalCount == 0 {
 			req.ProposalCount = 9
 		}
-		task := taskqueue.Task{ID: repository.NewID(), Kind: workflow.GenerateTask, ProjectID: projectID, Payload: map[string]any{"proposal_count": req.ProposalCount}}
+		req.ProductName = strings.TrimSpace(req.ProductName)
+		if len([]rune(req.ProductName)) > 255 {
+			writeError(w, http.StatusBadRequest, "product_name is too long")
+			return
+		}
+		payload := map[string]any{"proposal_count": req.ProposalCount, "product_name": req.ProductName}
+		task := taskqueue.Task{ID: repository.NewID(), Kind: workflow.GenerateTask, ProjectID: projectID, Payload: payload}
 		if err := s.queue.Submit(r.Context(), task); err != nil {
 			writeError(w, http.StatusServiceUnavailable, "task_queue_unavailable")
 			return

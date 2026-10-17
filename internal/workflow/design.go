@@ -77,7 +77,7 @@ func (w *DesignWorkflow) fuse(ctx context.Context, task taskqueue.Task) error {
 			return fmt.Errorf("source proposal does not belong to project")
 		}
 		proposal.Assets = nil
-		sources = append(sources, map[string]any{"id": proposal.ID, "title": proposal.Title, "concept": proposal.Concept, "design_strategy": proposal.DesignStrategy, "color_palette": proposal.ColorPalette, "typography": proposal.Typography, "difference_summary": proposal.Difference})
+		sources = append(sources, map[string]any{"id": proposal.ID, "product_name": proposal.ProductName, "title": proposal.Title, "concept": proposal.Concept, "design_strategy": proposal.DesignStrategy, "color_palette": proposal.ColorPalette, "typography": proposal.Typography, "difference_summary": proposal.Difference})
 	}
 	briefPayload, _ := json.Marshal(brief)
 	var briefMap map[string]any
@@ -91,6 +91,7 @@ func (w *DesignWorkflow) fuse(ctx context.Context, task taskqueue.Task) error {
 		return err
 	}
 	proposal := proposalFromMap(task.ProjectID, project.CurrentRound+1, run.Payload)
+	proposal.ProductName = productNameForProposal(proposal, "", map[string]struct{}{}, 0)
 	proposal.FusionID = fusion.ID
 	if err := w.persistProposalWithImage(ctx, proposal, run.Payload); err != nil {
 		return err
@@ -127,13 +128,21 @@ func (w *DesignWorkflow) generate(ctx context.Context, task taskqueue.Task) erro
 		count = int(value)
 	}
 	round := project.CurrentRound + 1
+	requestedProductName := strings.TrimSpace(stringValue(task.Payload, "product_name", ""))
+	usedProductNames := make(map[string]struct{})
 	generated := 0
 	for generated < count {
 		batch := count - generated
 		if batch > 3 {
 			batch = 3
 		}
-		run, err := w.concept.Run(ctx, agent.RunInput{ProjectID: task.ProjectID, Round: round, Payload: map[string]any{"brief": brief, "proposal_count": batch}})
+		conceptPayload := map[string]any{"brief": brief, "proposal_count": batch, "product_name": requestedProductName}
+		if requestedProductName == "" {
+			conceptPayload["product_name_mode"] = "auto_unique"
+		} else {
+			conceptPayload["product_name_mode"] = "specified"
+		}
+		run, err := w.concept.Run(ctx, agent.RunInput{ProjectID: task.ProjectID, Round: round, Payload: conceptPayload})
 		if err != nil {
 			return err
 		}
@@ -150,6 +159,7 @@ func (w *DesignWorkflow) generate(ctx context.Context, task taskqueue.Task) erro
 				continue
 			}
 			proposal := proposalFromMap(task.ProjectID, round, proposalMap)
+			proposal.ProductName = productNameForProposal(proposal, requestedProductName, usedProductNames, generated+1)
 			if err := w.persistProposalWithImage(ctx, proposal, proposalMap); err != nil {
 				return err
 			}
@@ -220,6 +230,7 @@ func (w *DesignWorkflow) revise(ctx context.Context, task taskqueue.Task) error 
 		return err
 	}
 	proposal := proposalFromMap(task.ProjectID, project.CurrentRound+1, run.Payload)
+	proposal.ProductName = productNameForProposal(proposal, selected.ProductName, map[string]struct{}{}, 0)
 	if err := w.persistProposalWithImage(ctx, proposal, run.Payload); err != nil {
 		return err
 	}
@@ -240,6 +251,9 @@ func (w *DesignWorkflow) persistProposalWithImage(ctx context.Context, proposal 
 	if prompt == "" {
 		prompt = proposal.Concept + ", packaging mockup, premium product photography"
 	}
+	if proposal.ProductName != "" {
+		prompt = fmt.Sprintf("%s. The product name must be considered in the design and clearly presented as: %s.", prompt, proposal.ProductName)
+	}
 	image, err := w.image.Generate(ctx, agent.ImageRequest{Prompt: prompt, Width: 1024, Height: 1024})
 	if err != nil {
 		return err
@@ -254,7 +268,33 @@ func (w *DesignWorkflow) persistProposalWithImage(ctx context.Context, proposal 
 func proposalFromMap(projectID string, round int, value map[string]any) domain.DesignProposal {
 	strategy, _ := value["design_strategy"].(map[string]any)
 	palette := toStringSlice(value["color_palette"])
-	return domain.DesignProposal{ID: repository.NewID(), ProjectID: projectID, Round: round, Title: stringValue(value, "title", "未命名方案"), Concept: stringValue(value, "concept", "包装创意方案"), DesignStrategy: strategy, ColorPalette: palette, Typography: stringValue(value, "typography", ""), Difference: stringValue(value, "difference_summary", ""), Status: "draft"}
+	return domain.DesignProposal{ID: repository.NewID(), ProjectID: projectID, Round: round, ProductName: stringValue(value, "product_name", ""), Title: stringValue(value, "title", "未命名方案"), Concept: stringValue(value, "concept", "包装创意方案"), DesignStrategy: strategy, ColorPalette: palette, Typography: stringValue(value, "typography", ""), Difference: stringValue(value, "difference_summary", ""), Status: "draft"}
+}
+
+func productNameForProposal(proposal domain.DesignProposal, requested string, used map[string]struct{}, ordinal int) string {
+	if requested = strings.TrimSpace(requested); requested != "" {
+		used[requested] = struct{}{}
+		return requested
+	}
+	candidate := strings.TrimSpace(proposal.ProductName)
+	if candidate == "" {
+		candidate = strings.TrimSpace(proposal.Title)
+		if candidate == "" {
+			candidate = "创意茶品"
+		}
+		candidate += "系列"
+	}
+	base := candidate
+	for suffix := 2; ; suffix++ {
+		if _, exists := used[candidate]; !exists {
+			used[candidate] = struct{}{}
+			return candidate
+		}
+		candidate = fmt.Sprintf("%s %d", base, suffix)
+		if suffix == 2 && ordinal > 0 {
+			candidate = fmt.Sprintf("%s %d", base, ordinal)
+		}
+	}
 }
 
 func stringValue(value map[string]any, key, fallback string) string {

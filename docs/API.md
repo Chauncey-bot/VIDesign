@@ -98,8 +98,10 @@ PATCH 示例：
 `POST /projects/{project_id}/generate`
 
 ```json
-{"proposal_count":9,"reference_asset_ids":[]}
+{"proposal_count":9,"product_name":"松萝茶·山岚玉青","reference_asset_ids":[]}
 ```
+
+`product_name` 可选。填写后，所有方案都必须围绕该产品名称进行包装文字层级、识别性和视觉设计；留空时，系统会为每套方案生成不同的 `product_name`。
 
 响应 `202`：返回任务 ID。任务完成后生成 3 套 `DesignProposal`。
 
@@ -107,7 +109,7 @@ PATCH 示例：
 
 `GET /projects/{project_id}/proposals?round=1`
 
-返回方案列表、设计策略、配色、字体和图片资产。
+返回方案列表、产品名称、设计策略、配色、字体和图片资产。每个方案包含可选的 `product_name` 字段。
 
 ## 提交客户反馈
 
