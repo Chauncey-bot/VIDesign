@@ -397,9 +397,12 @@ func (s *Server) parseChatRequest(r *http.Request, projectID string) (string, st
 	assetIDs := []string{}
 	documentFiles := r.MultipartForm.File["document"]
 	for index, header := range documentFiles {
-		if !strings.HasSuffix(strings.ToLower(header.Filename), ".docx") {
-			return "", "", nil, nil, fmt.Errorf("only .docx is supported in document field")
+		name := strings.TrimSpace(header.Filename)
+		dot := strings.LastIndex(name, ".")
+		if dot < 0 {
+			return "", "", nil, nil, fmt.Errorf("document must be .docx or an image (.png, .jpg, .jpeg, .webp)")
 		}
+		ext := strings.ToLower(name[dot:])
 		file, err := header.Open()
 		if err != nil {
 			return "", "", nil, nil, err
@@ -408,6 +411,17 @@ func (s *Server) parseChatRequest(r *http.Request, projectID string) (string, st
 		_ = file.Close()
 		if readErr != nil {
 			return "", "", nil, nil, readErr
+		}
+		if mimeType, ok := briefReferenceImageMIME(ext); ok {
+			asset := domain.Asset{ID: repository.NewID(), ProjectID: projectID, AssetType: "brief_reference_image", StorageURL: "data:" + mimeType + ";base64," + base64.StdEncoding.EncodeToString(data), Prompt: name, Provider: "customer-upload", Model: ext, Version: 1}
+			if err := s.repo.CreateAsset(r.Context(), asset); err != nil {
+				return "", "", nil, nil, err
+			}
+			assetIDs = append(assetIDs, asset.ID)
+			continue
+		}
+		if ext != ".docx" {
+			return "", "", nil, nil, fmt.Errorf("document must be .docx or an image (.png, .jpg, .jpeg, .webp)")
 		}
 		document, err := docx.Parse(data)
 		if err != nil {
@@ -432,6 +446,19 @@ func (s *Server) parseChatRequest(r *http.Request, projectID string) (string, st
 		return "", "", nil, nil, err
 	}
 	return message, documentText, assetIDs, brandAssetIDs, nil
+}
+
+func briefReferenceImageMIME(ext string) (string, bool) {
+	switch strings.ToLower(ext) {
+	case ".png":
+		return "image/png", true
+	case ".jpg", ".jpeg":
+		return "image/jpeg", true
+	case ".webp":
+		return "image/webp", true
+	default:
+		return "", false
+	}
 }
 
 func (s *Server) parseBrandAsset(r *http.Request, projectID string) ([]string, error) {

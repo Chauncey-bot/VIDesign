@@ -47,7 +47,7 @@ func TestLLMConceptIncludesSpecifiedProductName(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Payload["proposals"] == nil || !strings.Contains(provider.request.Messages[0].Content, "松萝茶·山岚玉青") {
+	if result.Payload["proposals"] == nil || !strings.Contains(provider.request.Messages[0].Content, "松萝茶·山岚玉青") || !strings.Contains(provider.request.Messages[0].Content, "不得改写") {
 		t.Fatalf("product name was not included in concept request: %#v", provider.request)
 	}
 	if !strings.Contains(provider.request.SystemPrompt, "product_name") {

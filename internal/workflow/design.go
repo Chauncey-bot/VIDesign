@@ -264,11 +264,19 @@ func (w *DesignWorkflow) persistProposalWithImage(ctx context.Context, proposal 
 		prompt = proposal.Concept + ", packaging mockup, premium product photography"
 	}
 	if proposal.ProductName != "" {
-		prompt = fmt.Sprintf("%s. The product name must be considered in the design and clearly presented as: %s.", prompt, proposal.ProductName)
+		prompt = fmt.Sprintf("%s. The product name must be rendered exactly as provided, character for character, with no translation, abbreviation, added suffix, omitted character or synonym: %s.", prompt, proposal.ProductName)
 	}
 	negative := ""
+	if proposal.ProductName != "" {
+		negative = "do not alter, translate, abbreviate, add to, remove from or replace the specified product name"
+	}
 	if len(protectedLogoIDs) > 0 {
-		negative = "do not redraw, alter, recolor, distort, crop, restyle, replace or add effects to any protected brand logo"
+		logoNegative := "do not redraw, alter, recolor, distort, crop, restyle, replace or add effects to any protected brand logo"
+		if negative != "" {
+			negative += "; " + logoNegative
+		} else {
+			negative = logoNegative
+		}
 		prompt += " Use the customer's original uploaded brand logo file exactly as provided. Do not redraw, alter, recolor, distort, crop, restyle, rearrange, replace or add effects to the logo; only scale proportionally and position it on the package."
 	}
 	image, err := w.image.Generate(ctx, agent.ImageRequest{Prompt: prompt, Negative: negative, ReferenceIDs: protectedLogoIDs, Width: 1024, Height: 1024})
