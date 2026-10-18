@@ -54,3 +54,22 @@ func TestLLMConceptIncludesSpecifiedProductName(t *testing.T) {
 		t.Fatalf("product_name field missing from system prompt: %s", provider.request.SystemPrompt)
 	}
 }
+
+func TestLLMConceptLocksUploadedBrandLogo(t *testing.T) {
+	provider := &conceptTestProvider{}
+	concept := NewLLMConcept(provider)
+	_, err := concept.Run(context.Background(), RunInput{Payload: map[string]any{
+		"brief":                 map[string]any{"product_name": "品牌茶"},
+		"proposal_count":        1,
+		"protected_logo_assets": []map[string]any{{"asset_id": "logo-1", "name": "brand.svg", "type": ".svg"}},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(provider.request.Messages[0].Content, "禁止重绘") || !strings.Contains(provider.request.Messages[0].Content, "原样使用") {
+		t.Fatalf("logo protection rule missing from concept request: %s", provider.request.Messages[0].Content)
+	}
+	if !strings.Contains(provider.request.SystemPrompt, "禁止对 Logo 做任何调整") {
+		t.Fatalf("logo protection rule missing from system prompt: %s", provider.request.SystemPrompt)
+	}
+}

@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Packaging AI · 包装设计工作台</title>
-  <link rel="stylesheet" href="/styles.css?v=20261017-proposal-round-groups">
+  <link rel="stylesheet" href="/styles.css?v=20261017-logo-lock">
 </head>
 <body>
   <header class="topbar">
@@ -61,6 +61,7 @@
           <button class="tab" data-tab="brief">设计 Brief <span id="briefBadge" class="tab-badge">0%</span></button>
           <button class="tab" data-tab="proposals">方案与反馈</button>
         </nav>
+        <div id="generationNotice" class="generation-notice hidden" role="status" aria-live="polite"></div>
 
         <section id="tab-intake" class="tab-panel active">
           <div id="researchWizard" class="research-wizard card">
@@ -68,7 +69,7 @@
             <div class="wizard-steps" id="researchSteps"></div>
             <div id="researchQuestions" class="research-questions"></div>
             <textarea id="researchAnswer" rows="5" placeholder="请尽量完整填写，Word 文档可在第一步上传"></textarea>
-            <div id="researchUpload" class="research-upload"><label for="researchDocumentInput" class="drop-zone"><strong>＋ 添加 Word 需求文档（可多次添加）</strong><span>可多次选择，或拖拽多个 .docx 文件到这里</span></label><input id="researchDocumentInput" type="file" multiple accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document"><span id="researchDocumentName"></span><label for="brandFileInput" class="brand-file-label brand-drop-zone"><strong>＋ 添加品牌 AI 文件（可多次添加）</strong><span>可多次选择，或拖拽 .ai / .eps / .svg 文件</span></label><input id="brandFileInput" type="file" multiple accept=".ai,.eps,.svg,application/postscript,image/svg+xml"><span id="brandFileName"></span></div>
+            <div id="researchUpload" class="research-upload"><label for="researchDocumentInput" class="drop-zone"><strong>＋ 添加 Word 需求文档（可多次添加）</strong><span>可多次选择，或拖拽多个 .docx 文件到这里</span></label><input id="researchDocumentInput" type="file" multiple accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document"><span id="researchDocumentName"></span><label for="brandFileInput" class="brand-file-label brand-drop-zone"><strong>＋ 添加品牌 Logo 源文件（可多次添加）</strong><span>支持 .ai / .eps / .svg；上传后 Logo 原样保留，禁止调整</span></label><input id="brandFileInput" type="file" multiple accept=".ai,.eps,.svg,application/postscript,image/svg+xml"><span id="brandFileName"></span></div>
             <div id="researchTaskProgress" class="research-task-progress hidden"><span class="progress-spinner"></span><strong id="researchTaskProgressText">正在提交本步…</strong></div>
             <div class="wizard-footer"><span id="researchProgressText" class="muted">每一步提交后，Agent 会整理并保存 Brief。</span><button id="researchNextBtn" class="primary" type="button">提交本步并继续 <span>→</span></button></div>
           </div>
@@ -85,7 +86,7 @@
 
         <section id="tab-brief" class="tab-panel">
           <details id="briefDetails" class="brief-details card"><summary>设计 Brief <span id="briefSummaryScore">0%</span></summary><div class="brief-body"><div class="section-heading"><div><div class="eyebrow">结构化需求</div><h2>设计 Brief</h2></div><button id="refreshBriefBtn" class="secondary">刷新 Brief</button></div>
-          <div class="brief-grid"><div class="brief-field wide"><label>产品与品牌信息</label><pre id="briefProduct">尚未采集</pre></div><div class="brief-field"><label>目标客户</label><p id="briefAudience">—</p></div><div class="brief-field"><label>市场</label><p id="briefMarket">—</p></div><div class="brief-field"><label>材质 / 工艺</label><p id="briefMaterial">—</p></div><div class="brief-field"><label>包装规格</label><pre id="briefSpec">—</pre></div><div class="brief-field wide"><label>必填文字</label><div id="briefRequired" class="tag-list">—</div></div><div class="brief-field wide"><label>约束条件</label><div id="briefConstraints" class="tag-list">—</div></div></div></div></details>
+          <div class="brief-grid"><div class="brief-field wide"><label>产品与品牌信息</label><pre id="briefProduct">尚未采集</pre></div><div class="brief-field wide"><label>品牌资产保护</label><p id="briefBrandProtection">未上传品牌 Logo</p></div><div class="brief-field"><label>目标客户</label><p id="briefAudience">—</p></div><div class="brief-field"><label>市场</label><p id="briefMarket">—</p></div><div class="brief-field"><label>材质 / 工艺</label><p id="briefMaterial">—</p></div><div class="brief-field"><label>包装规格</label><pre id="briefSpec">—</pre></div><div class="brief-field wide"><label>必填文字</label><div id="briefRequired" class="tag-list">—</div></div><div class="brief-field wide"><label>约束条件</label><div id="briefConstraints" class="tag-list">—</div></div></div></div></details>
         </section>
 
         <section id="tab-proposals" class="tab-panel">
@@ -113,6 +114,6 @@
     </section>
   </main>
   <div id="toast" class="toast"></div>
-  <script src="/app.js?v=20261017-proposal-round-groups-product-name"></script>
+  <script src="/app.js?v=20261017-logo-lock"></script>
 </body>
 </html>

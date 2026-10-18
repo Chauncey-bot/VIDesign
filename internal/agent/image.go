@@ -21,7 +21,14 @@ func NewOpenAICompatibleImage(baseURL, apiKey, model string) *OpenAICompatibleIm
 }
 
 func (p *OpenAICompatibleImage) Generate(ctx context.Context, request ImageRequest) (ImageResponse, error) {
-	body, err := json.Marshal(map[string]any{"model": p.model, "prompt": request.Prompt, "negative_prompt": request.Negative, "size": fmt.Sprintf("%dx%d", request.Width, request.Height), "n": 1})
+	bodyPayload := map[string]any{"model": p.model, "prompt": request.Prompt, "negative_prompt": request.Negative, "size": fmt.Sprintf("%dx%d", request.Width, request.Height), "n": 1}
+	if len(request.ReferenceIDs) > 0 {
+		// Keep the protected source asset IDs in the provider request so an
+		// image adapter can resolve them as reference images without changing
+		// the generic ImageProvider interface.
+		bodyPayload["reference_asset_ids"] = request.ReferenceIDs
+	}
+	body, err := json.Marshal(bodyPayload)
 	if err != nil {
 		return ImageResponse{}, err
 	}

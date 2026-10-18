@@ -67,6 +67,10 @@ func (w *DesignWorkflow) fuse(ctx context.Context, task taskqueue.Task) error {
 	if fusion.ProjectID != task.ProjectID {
 		return fmt.Errorf("fusion does not belong to project")
 	}
+	protectedLogoIDs, protectedLogoAssets, err := w.protectedLogoAssets(ctx, brief)
+	if err != nil {
+		return err
+	}
 	sources := make([]map[string]any, 0, len(fusion.SourceProposalIDs))
 	for _, sourceID := range fusion.SourceProposalIDs {
 		proposal, err := w.repo.GetProposal(ctx, sourceID)
@@ -82,7 +86,7 @@ func (w *DesignWorkflow) fuse(ctx context.Context, task taskqueue.Task) error {
 	briefPayload, _ := json.Marshal(brief)
 	var briefMap map[string]any
 	_ = json.Unmarshal(briefPayload, &briefMap)
-	input := map[string]any{"brief": briefMap, "fusion": fusion, "sources": sources}
+	input := map[string]any{"brief": briefMap, "fusion": fusion, "sources": sources, "protected_logo_assets": protectedLogoAssets}
 	run, err := w.fusion.Run(ctx, agent.RunInput{ProjectID: task.ProjectID, Round: project.CurrentRound + 1, Payload: input})
 	if err != nil {
 		return err
@@ -93,7 +97,7 @@ func (w *DesignWorkflow) fuse(ctx context.Context, task taskqueue.Task) error {
 	proposal := proposalFromMap(task.ProjectID, project.CurrentRound+1, run.Payload)
 	proposal.ProductName = productNameForProposal(proposal, "", map[string]struct{}{}, 0)
 	proposal.FusionID = fusion.ID
-	if err := w.persistProposalWithImage(ctx, proposal, run.Payload); err != nil {
+	if err := w.persistProposalWithImage(ctx, proposal, run.Payload, protectedLogoIDs); err != nil {
 		return err
 	}
 	if err := w.repo.CompleteAgentRun(ctx, task.ProjectID, run.AgentName, run.Payload); err != nil {
@@ -129,6 +133,10 @@ func (w *DesignWorkflow) generate(ctx context.Context, task taskqueue.Task) erro
 	}
 	round := project.CurrentRound + 1
 	requestedProductName := strings.TrimSpace(stringValue(task.Payload, "product_name", ""))
+	protectedLogoIDs, protectedLogoAssets, err := w.protectedLogoAssets(ctx, brief)
+	if err != nil {
+		return err
+	}
 	usedProductNames := make(map[string]struct{})
 	generated := 0
 	for generated < count {
@@ -136,7 +144,7 @@ func (w *DesignWorkflow) generate(ctx context.Context, task taskqueue.Task) erro
 		if batch > 3 {
 			batch = 3
 		}
-		conceptPayload := map[string]any{"brief": brief, "proposal_count": batch, "product_name": requestedProductName}
+		conceptPayload := map[string]any{"brief": brief, "proposal_count": batch, "product_name": requestedProductName, "protected_logo_assets": protectedLogoAssets}
 		if requestedProductName == "" {
 			conceptPayload["product_name_mode"] = "auto_unique"
 		} else {
@@ -160,7 +168,7 @@ func (w *DesignWorkflow) generate(ctx context.Context, task taskqueue.Task) erro
 			}
 			proposal := proposalFromMap(task.ProjectID, round, proposalMap)
 			proposal.ProductName = productNameForProposal(proposal, requestedProductName, usedProductNames, generated+1)
-			if err := w.persistProposalWithImage(ctx, proposal, proposalMap); err != nil {
+			if err := w.persistProposalWithImage(ctx, proposal, proposalMap, protectedLogoIDs); err != nil {
 				return err
 			}
 			generated++
@@ -200,7 +208,11 @@ func (w *DesignWorkflow) revise(ctx context.Context, task taskqueue.Task) error 
 	selectedForAgent.ImageAssetIDs = nil
 	feedback, _ := task.Payload["feedback"].(map[string]any)
 	preserve, _ := task.Payload["preserve"].([]any)
-	revisionPayload := map[string]any{"brief": brief, "proposal": selectedForAgent, "feedback": feedback, "preserve": preserve}
+	protectedLogoIDs, protectedLogoAssets, err := w.protectedLogoAssets(ctx, brief)
+	if err != nil {
+		return err
+	}
+	revisionPayload := map[string]any{"brief": brief, "proposal": selectedForAgent, "feedback": feedback, "preserve": preserve, "protected_logo_assets": protectedLogoAssets}
 	if ids, ok := task.Payload["reference_asset_ids"].([]any); ok {
 		assetIDs := make([]string, 0, len(ids))
 		for _, id := range ids {
@@ -231,7 +243,7 @@ func (w *DesignWorkflow) revise(ctx context.Context, task taskqueue.Task) error 
 	}
 	proposal := proposalFromMap(task.ProjectID, project.CurrentRound+1, run.Payload)
 	proposal.ProductName = productNameForProposal(proposal, selected.ProductName, map[string]struct{}{}, 0)
-	if err := w.persistProposalWithImage(ctx, proposal, run.Payload); err != nil {
+	if err := w.persistProposalWithImage(ctx, proposal, run.Payload, protectedLogoIDs); err != nil {
 		return err
 	}
 	if err := w.repo.CompleteAgentRun(ctx, task.ProjectID, run.AgentName, run.Payload); err != nil {
@@ -243,7 +255,7 @@ func (w *DesignWorkflow) revise(ctx context.Context, task taskqueue.Task) error 
 	return w.repo.UpdateStatus(ctx, project.ID, domain.ProjectAwaitFeedback)
 }
 
-func (w *DesignWorkflow) persistProposalWithImage(ctx context.Context, proposal domain.DesignProposal, source map[string]any) error {
+func (w *DesignWorkflow) persistProposalWithImage(ctx context.Context, proposal domain.DesignProposal, source map[string]any, protectedLogoIDs []string) error {
 	if err := w.repo.CreateProposal(ctx, proposal); err != nil {
 		return err
 	}
@@ -254,7 +266,12 @@ func (w *DesignWorkflow) persistProposalWithImage(ctx context.Context, proposal 
 	if proposal.ProductName != "" {
 		prompt = fmt.Sprintf("%s. The product name must be considered in the design and clearly presented as: %s.", prompt, proposal.ProductName)
 	}
-	image, err := w.image.Generate(ctx, agent.ImageRequest{Prompt: prompt, Width: 1024, Height: 1024})
+	negative := ""
+	if len(protectedLogoIDs) > 0 {
+		negative = "do not redraw, alter, recolor, distort, crop, restyle, replace or add effects to any protected brand logo"
+		prompt += " Use the customer's original uploaded brand logo file exactly as provided. Do not redraw, alter, recolor, distort, crop, restyle, rearrange, replace or add effects to the logo; only scale proportionally and position it on the package."
+	}
+	image, err := w.image.Generate(ctx, agent.ImageRequest{Prompt: prompt, Negative: negative, ReferenceIDs: protectedLogoIDs, Width: 1024, Height: 1024})
 	if err != nil {
 		return err
 	}
@@ -263,6 +280,22 @@ func (w *DesignWorkflow) persistProposalWithImage(ctx context.Context, proposal 
 		return err
 	}
 	return w.repo.LinkProposalAsset(ctx, proposal.ID, asset.ID)
+}
+
+func (w *DesignWorkflow) protectedLogoAssets(ctx context.Context, brief domain.Brief) ([]string, []map[string]any, error) {
+	ids := protectedAssetIDs(brief.BrandInfo["protected_logo_asset_ids"])
+	if len(ids) == 0 {
+		return nil, []map[string]any{}, nil
+	}
+	assets, err := w.repo.GetAssets(ctx, ids)
+	if err != nil {
+		return nil, nil, err
+	}
+	metadata := make([]map[string]any, 0, len(assets))
+	for _, asset := range assets {
+		metadata = append(metadata, map[string]any{"asset_id": asset.ID, "name": asset.Prompt, "type": asset.Model, "usage": "原始 Logo，禁止任何调整"})
+	}
+	return ids, metadata, nil
 }
 
 func proposalFromMap(projectID string, round int, value map[string]any) domain.DesignProposal {

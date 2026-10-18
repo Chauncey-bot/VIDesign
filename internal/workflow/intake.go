@@ -99,9 +99,20 @@ func (w *IntakeWorkflow) Handle(ctx context.Context, task taskqueue.Task) error 
 		}
 		brandAssets := make([]map[string]any, 0, len(assets))
 		for _, asset := range assets {
-			brandAssets = append(brandAssets, map[string]any{"name": asset.Prompt, "type": asset.Model})
+			brandAssets = append(brandAssets, map[string]any{"asset_id": asset.ID, "name": asset.Prompt, "type": asset.Model})
 		}
 		agentPayload["brand_assets"] = brandAssets
+		if len(assetIDs) > 0 {
+			if brief.BrandInfo == nil {
+				brief.BrandInfo = map[string]any{}
+			}
+			protected := protectedAssetIDs(brief.BrandInfo["protected_logo_asset_ids"])
+			for _, assetID := range assetIDs {
+				protected = appendUnique(protected, assetID)
+			}
+			brief.BrandInfo["protected_logo_asset_ids"] = protected
+			brief.BrandInfo["logo_protection"] = "客户上传的品牌 Logo 必须原样使用，禁止重绘、变形、改色、描边、重新排版、裁切、加滤镜或替换。"
+		}
 	}
 	run, err := w.intake.Run(ctx, agent.RunInput{ProjectID: task.ProjectID, Round: project.CurrentRound, Payload: agentPayload})
 	if err != nil {
@@ -155,6 +166,23 @@ func (w *IntakeWorkflow) Handle(ctx context.Context, task taskqueue.Task) error 
 		}
 	}
 	return w.repo.CompleteAgentRun(ctx, task.ProjectID, run.AgentName, run.Payload)
+}
+
+func protectedAssetIDs(value any) []string {
+	switch values := value.(type) {
+	case []string:
+		return append([]string{}, values...)
+	case []any:
+		result := make([]string, 0, len(values))
+		for _, item := range values {
+			if value, ok := item.(string); ok && strings.TrimSpace(value) != "" {
+				result = appendUnique(result, value)
+			}
+		}
+		return result
+	default:
+		return nil
+	}
 }
 
 func applyPatch(brief *domain.Brief, patch map[string]any) {

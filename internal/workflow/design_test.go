@@ -22,3 +22,10 @@ func TestProductNameForProposalCreatesUniqueNamesWhenOmitted(t *testing.T) {
 		t.Fatalf("generated names = %q, %q", first, second)
 	}
 }
+
+func TestProtectedAssetIDsPreserveUploadedLogoReferences(t *testing.T) {
+	ids := protectedAssetIDs([]any{"logo-1", "logo-1", "logo-2"})
+	if len(ids) != 2 || ids[0] != "logo-1" || ids[1] != "logo-2" {
+		t.Fatalf("protected logo ids = %#v", ids)
+	}
+}
