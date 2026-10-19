@@ -103,7 +103,7 @@ PATCH 示例：
 
 `product_name` 可选。填写后，所有方案都必须围绕该产品名称进行包装文字层级、识别性和视觉设计；留空时，系统会为每套方案生成不同的 `product_name`。
 
-响应 `202`：返回任务 ID。任务完成后生成 3 套 `DesignProposal`。
+响应 `202`：返回任务 ID。任务完成后按 `proposal_count` 生成对应数量的 `DesignProposal`（工作台默认 9 套，每次由 Agent 分批生成 3 套）。
 
 ## 查看方案
 

@@ -1,9 +1,20 @@
 package workflow
 
 import (
+	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"image"
+	"image/color"
+	_ "image/jpeg"
+	"image/png"
+	"io"
+	"net/http"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 
 	"packaging-ai/internal/agent"
@@ -17,6 +28,12 @@ const (
 	RevisionTask = "revise_design"
 	FusionTask   = "fuse_design"
 )
+
+// protectedBrandMarkSurfacePrompt describes the visual treatment for a source
+// Logo supplied to the image generator as an authoritative reference image.
+const protectedBrandMarkSurfacePrompt = ` With a protected brand mark, the customer's original logo file is supplied to the image generator as an authoritative visual reference and the only source of the Logo artwork and Logo wording. Generate that exact logo as part of the package artwork itself: preserve its geometry, typography, every Chinese character and subtitle, proportions, spacing, color relationships and registered mark. Never substitute brand_name, product_name, product_series_name or any other Brief text for words inside the reference Logo; if exact Logo wording cannot be rendered, leave the Logo area blank rather than inventing or substituting text. Apply it directly to one clear, flat or appropriately curved, unobstructed primary package surface with a safe margin from edges, folds, seams, hardware, illustrations and required copy. Make the logo look like the specified physical finish (print, foil, emboss, engraving, paint or label) on that same surface, with matching perspective, curvature, grain, roughness, gloss, local highlights, contact shadow and occlusion. Do not invent, simplify, trace, replace, duplicate or redraw a different brand mark, and do not place it on the background, canvas, table, air or a different object.`
+
+const protectedBrandMarkSurfaceNegative = `watermark, pasted PNG, floating brand mark, mark on canvas, mark in background, mark in air, white sticker edge, white halo, transparent overlay, flat unlit mark, duplicated mark, invented seal, fake brand symbol, pseudo-text, distorted mark, stretched mark, compressed mark, cropped mark, mark crossing an edge, mark crossing a fold or seam, mark covering required content, mark detached from the target surface`
 
 type DesignWorkflow struct {
 	repo     *repository.MySQLRepository
@@ -127,10 +144,7 @@ func (w *DesignWorkflow) generate(ctx context.Context, task taskqueue.Task) erro
 	if project.Status != domain.ProjectBriefReady && project.Status != domain.ProjectAwaitFeedback {
 		return fmt.Errorf("project is not ready for design generation: %s", project.Status)
 	}
-	count := 3
-	if value, ok := task.Payload["proposal_count"].(float64); ok && int(value) > 0 {
-		count = int(value)
-	}
+	count := taskProposalCount(task.Payload["proposal_count"])
 	round := project.CurrentRound + 1
 	requestedProductName := strings.TrimSpace(stringValue(task.Payload, "product_name", ""))
 	protectedLogoIDs, protectedLogoAssets, err := w.protectedLogoAssets(ctx, brief)
@@ -184,6 +198,29 @@ func (w *DesignWorkflow) generate(ctx context.Context, task taskqueue.Task) erro
 		return err
 	}
 	return w.repo.UpdateStatus(ctx, project.ID, domain.ProjectAwaitFeedback)
+}
+
+// taskProposalCount handles numbers after Task has been decoded from JSON.
+// Keep the default conservative while allowing the UI's requested nine
+// proposals to be generated as three-image concept batches.
+func taskProposalCount(value any) int {
+	count := 3
+	switch number := value.(type) {
+	case int:
+		count = number
+	case int64:
+		count = int(number)
+	case float64:
+		count = int(number)
+	case json.Number:
+		if parsed, err := number.Int64(); err == nil {
+			count = int(parsed)
+		}
+	}
+	if count < 1 || count > 9 {
+		return 3
+	}
+	return count
 }
 
 func (w *DesignWorkflow) revise(ctx context.Context, task taskqueue.Task) error {
@@ -256,31 +293,37 @@ func (w *DesignWorkflow) revise(ctx context.Context, task taskqueue.Task) error 
 }
 
 func (w *DesignWorkflow) persistProposalWithImage(ctx context.Context, proposal domain.DesignProposal, source map[string]any, protectedLogoIDs []string) error {
-	if err := w.repo.CreateProposal(ctx, proposal); err != nil {
-		return err
-	}
 	prompt, _ := source["image_prompt"].(string)
 	if prompt == "" {
-		prompt = proposal.Concept + ", packaging mockup, premium product photography"
+		prompt = proposal.Concept + ", a production-ready packaging product mockup based on the package form, material, dimensions and use case in the brief, premium product photography"
 	}
+	prompt += " Render one coherent, manufacturable package system containing every package specification and component required by the brief, such as the main box, inner box, bottle, jar, tin, pouch, tube, label, carton or different capacities. Each required package unit must be visible as a real physical object with its own readable display surface, consistent branding, material and production process. Arrange the complete set as a coherent product presentation without unrelated products or overlapping the required package faces. Do not create a moodboard, presentation board, design sheet, nine-grid collage, split-screen layout or floating graphic elements."
 	if proposal.ProductName != "" {
 		prompt = fmt.Sprintf("%s. The product name must be rendered exactly as provided, character for character, with no translation, abbreviation, added suffix, omitted character or synonym: %s.", prompt, proposal.ProductName)
 	}
-	negative := ""
+	negative := "moodboard, presentation board, design sheet, nine-grid collage, split-screen collage, unrelated product, missing package specification, hidden package unit, blocked package face, floating graphic, logo on canvas, logo in background, watermark, invented logo, fake seal, duplicate logo"
 	if proposal.ProductName != "" {
-		negative = "do not alter, translate, abbreviate, add to, remove from or replace the specified product name"
+		negative += "; do not alter, translate, abbreviate, add to, remove from or replace the specified product name"
 	}
 	if len(protectedLogoIDs) > 0 {
-		logoNegative := "do not redraw, alter, recolor, distort, crop, restyle, replace or add effects to any protected brand logo"
-		if negative != "" {
-			negative += "; " + logoNegative
-		} else {
-			negative = logoNegative
-		}
-		prompt += " Use the customer's original uploaded brand logo file exactly as provided. Do not redraw, alter, recolor, distort, crop, restyle, rearrange, replace or add effects to the logo; only scale proportionally and position it on the package."
+		negative += "; " + protectedBrandMarkSurfaceNegative + "; do not invent, duplicate, replace, distort, crop, restyle or add effects to the supplied reference Logo"
+		prompt += protectedBrandMarkSurfacePrompt
 	}
-	image, err := w.image.Generate(ctx, agent.ImageRequest{Prompt: prompt, Negative: negative, ReferenceIDs: protectedLogoIDs, Width: 1024, Height: 1024})
+	referenceImages, err := w.logoReferenceImages(ctx, protectedLogoIDs)
 	if err != nil {
+		return err
+	}
+	image, err := w.image.Generate(ctx, agent.ImageRequest{Prompt: prompt, Negative: negative, ReferenceIDs: protectedLogoIDs, ReferenceImages: referenceImages, Width: 1024, Height: 1024})
+	if err != nil {
+		return err
+	}
+	if len(protectedLogoIDs) > 0 {
+		image.Provider += "+logo-in-generation"
+	}
+	// Persist only after the image request succeeds. A provider timeout can
+	// cause Asynq to retry a task; creating the proposal first would leave empty
+	// duplicate proposals on every retry.
+	if err := w.repo.CreateProposal(ctx, proposal); err != nil {
 		return err
 	}
 	asset := domain.Asset{ID: repository.NewID(), ProjectID: proposal.ProjectID, AssetType: "proposal_mockup", StorageURL: image.AssetURL, Width: image.Width, Height: image.Height, Prompt: prompt, Provider: image.Provider, Model: image.Model, Version: 1}
@@ -288,6 +331,147 @@ func (w *DesignWorkflow) persistProposalWithImage(ctx context.Context, proposal 
 		return err
 	}
 	return w.repo.LinkProposalAsset(ctx, proposal.ID, asset.ID)
+}
+
+func readImageSource(ctx context.Context, source string) ([]byte, error) {
+	if strings.HasPrefix(source, "data:") {
+		comma := strings.IndexByte(source, ',')
+		if comma < 0 {
+			return nil, fmt.Errorf("invalid data URL")
+		}
+		meta, payload := source[:comma], source[comma+1:]
+		if strings.HasSuffix(meta, ";base64") {
+			return base64.StdEncoding.DecodeString(payload)
+		}
+		return []byte(payload), nil
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, source, nil)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("image download failed (%d)", resp.StatusCode)
+	}
+	return io.ReadAll(io.LimitReader(resp.Body, 32<<20))
+}
+
+func renderLogoAsset(ctx context.Context, asset domain.Asset) ([]byte, error) {
+	input, err := readImageSource(ctx, asset.StorageURL)
+	if err != nil {
+		return nil, err
+	}
+	ext := strings.ToLower(filepath.Ext(asset.Prompt))
+	if ext == "" {
+		ext = strings.ToLower(strings.TrimSpace(asset.Model))
+	}
+	if ext == ".png" || ext == ".jpg" || ext == ".jpeg" || ext == ".webp" {
+		return input, nil
+	}
+	tmpDir, err := os.MkdirTemp("", "protected-logo-")
+	if err != nil {
+		return nil, err
+	}
+	defer os.RemoveAll(tmpDir)
+	inputPath := filepath.Join(tmpDir, "source"+ext)
+	if err := os.WriteFile(inputPath, input, 0600); err != nil {
+		return nil, err
+	}
+	switch ext {
+	case ".ai", ".eps", ".pdf":
+		outputBase := filepath.Join(tmpDir, "logo")
+		cmd := exec.CommandContext(ctx, "pdftoppm", "-png", "-singlefile", "-r", "144", inputPath, outputBase)
+		if output, err := cmd.CombinedOutput(); err != nil {
+			return nil, fmt.Errorf("pdftoppm: %w (%s)", err, strings.TrimSpace(string(output)))
+		}
+		return os.ReadFile(outputBase + ".png")
+	case ".svg":
+		outputPath := filepath.Join(tmpDir, "logo.png")
+		cmd := exec.CommandContext(ctx, "rsvg-convert", "-o", outputPath, inputPath)
+		if output, err := cmd.CombinedOutput(); err != nil {
+			return nil, fmt.Errorf("rsvg-convert: %w (%s)", err, strings.TrimSpace(string(output)))
+		}
+		return os.ReadFile(outputPath)
+	case ".png":
+		return input, nil
+	default:
+		return nil, fmt.Errorf("unsupported protected logo format %q", ext)
+	}
+}
+
+// logoReferenceImages converts the customer's source artwork to transparent
+// PNG reference images for the image generator. The image model receives the
+// original mark during generation; this service does not paste it afterward.
+func (w *DesignWorkflow) logoReferenceImages(ctx context.Context, ids []string) ([]string, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	assets, err := w.repo.GetAssets(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	references := make([]string, 0, len(assets))
+	for _, asset := range assets {
+		data, err := renderLogoAsset(ctx, asset)
+		if err != nil {
+			return nil, fmt.Errorf("render logo reference %s: %w", asset.ID, err)
+		}
+		decoded, _, err := image.Decode(bytes.NewReader(data))
+		if err != nil {
+			return nil, fmt.Errorf("decode logo reference %s: %w", asset.ID, err)
+		}
+		cropped := cropLogo(decoded)
+		var encoded bytes.Buffer
+		if err := png.Encode(&encoded, cropped); err != nil {
+			return nil, fmt.Errorf("encode logo reference %s: %w", asset.ID, err)
+		}
+		references = append(references, "data:image/png;base64,"+base64.StdEncoding.EncodeToString(encoded.Bytes()))
+	}
+	return references, nil
+}
+
+func cropLogo(source image.Image) image.Image {
+	bounds := source.Bounds()
+	minX, minY := bounds.Max.X, bounds.Max.Y
+	maxX, maxY := bounds.Min.X, bounds.Min.Y
+	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
+		for x := bounds.Min.X; x < bounds.Max.X; x++ {
+			r, g, b, a := source.At(x, y).RGBA()
+			if a < 1024 || (r > 62500 && g > 62500 && b > 62500) {
+				continue
+			}
+			if x < minX {
+				minX = x
+			}
+			if y < minY {
+				minY = y
+			}
+			if x > maxX {
+				maxX = x
+			}
+			if y > maxY {
+				maxY = y
+			}
+		}
+	}
+	if minX > maxX || minY > maxY {
+		return source
+	}
+	result := image.NewRGBA(image.Rect(0, 0, maxX-minX+1, maxY-minY+1))
+	for y := minY; y <= maxY; y++ {
+		for x := minX; x <= maxX; x++ {
+			r, g, b, a := source.At(x, y).RGBA()
+			if r > 62500 && g > 62500 && b > 62500 {
+				a = 0
+			}
+			result.SetRGBA(x-minX, y-minY, color.RGBA{uint8(r >> 8), uint8(g >> 8), uint8(b >> 8), uint8(a >> 8)})
+		}
+	}
+	return result
 }
 
 func (w *DesignWorkflow) protectedLogoAssets(ctx context.Context, brief domain.Brief) ([]string, []map[string]any, error) {
@@ -301,7 +485,7 @@ func (w *DesignWorkflow) protectedLogoAssets(ctx context.Context, brief domain.B
 	}
 	metadata := make([]map[string]any, 0, len(assets))
 	for _, asset := range assets {
-		metadata = append(metadata, map[string]any{"asset_id": asset.ID, "name": asset.Prompt, "type": asset.Model, "usage": "原始 Logo，禁止任何调整"})
+		metadata = append(metadata, map[string]any{"asset_id": asset.ID, "name": asset.Prompt, "type": asset.Model, "usage": "原始品牌标识，禁止任何调整"})
 	}
 	return ids, metadata, nil
 }

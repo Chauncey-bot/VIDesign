@@ -80,6 +80,15 @@ func (r *MySQLRepository) EnsureAuthSchema(ctx context.Context) error {
 	) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`); err != nil {
 		return err
 	}
+	if _, err := r.db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS intake_submissions (
+		id CHAR(36) NOT NULL, project_id CHAR(36) NOT NULL, task_id CHAR(36) NOT NULL,
+		message LONGTEXT NOT NULL, document_names JSON NOT NULL, brand_file_names JSON NOT NULL,
+		created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3), PRIMARY KEY (id),
+		KEY idx_intake_submissions_project (project_id, created_at),
+		CONSTRAINT fk_intake_submissions_project FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+	) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`); err != nil {
+		return err
+	}
 	_, err = r.db.ExecContext(ctx, `ALTER TABLE design_proposals ADD COLUMN fusion_id CHAR(36) NULL, ADD KEY idx_proposals_fusion (fusion_id)`)
 	if err != nil && !strings.Contains(strings.ToLower(err.Error()), "duplicate column") {
 		// MySQL reports duplicate key when the column already exists as well as
@@ -89,6 +98,43 @@ func (r *MySQLRepository) EnsureAuthSchema(ctx context.Context) error {
 		}
 	}
 	return nil
+}
+
+func (r *MySQLRepository) CreateIntakeSubmission(ctx context.Context, submission domain.IntakeSubmission) error {
+	documents, err := json.Marshal(submission.DocumentNames)
+	if err != nil {
+		return err
+	}
+	brands, err := json.Marshal(submission.BrandFileNames)
+	if err != nil {
+		return err
+	}
+	_, err = r.db.ExecContext(ctx, `INSERT INTO intake_submissions (id, project_id, task_id, message, document_names, brand_file_names) VALUES (?, ?, ?, ?, ?, ?)`, submission.ID, submission.ProjectID, submission.TaskID, submission.Message, documents, brands)
+	return err
+}
+
+func (r *MySQLRepository) ListIntakeSubmissions(ctx context.Context, projectID string) ([]domain.IntakeSubmission, error) {
+	rows, err := r.db.QueryContext(ctx, `SELECT id, project_id, task_id, message, document_names, brand_file_names, created_at FROM intake_submissions WHERE project_id = ? ORDER BY created_at ASC`, projectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	result := make([]domain.IntakeSubmission, 0)
+	for rows.Next() {
+		var submission domain.IntakeSubmission
+		var documents, brands []byte
+		if err := rows.Scan(&submission.ID, &submission.ProjectID, &submission.TaskID, &submission.Message, &documents, &brands, &submission.CreatedAt); err != nil {
+			return nil, err
+		}
+		if err := unmarshalJSON(documents, &submission.DocumentNames); err != nil {
+			return nil, err
+		}
+		if err := unmarshalJSON(brands, &submission.BrandFileNames); err != nil {
+			return nil, err
+		}
+		result = append(result, submission)
+	}
+	return result, rows.Err()
 }
 
 func (r *MySQLRepository) CreateUser(ctx context.Context, email, passwordHash string) (auth.User, error) {
@@ -261,9 +307,21 @@ func normalizeBriefSnapshot(brief *domain.Brief) bool {
 	if brief.ProductInfo == nil {
 		brief.ProductInfo = map[string]any{}
 	}
+	// Agent/document intake may use the human-readable keys below. Copy them
+	// into the stable fields consumed by the UI, scorer and design workflow.
+	if briefString(brief.ProductInfo["product_category"]) == "" {
+		if value := briefString(brief.ProductInfo["category"]); value != "" {
+			brief.ProductInfo["product_category"], changed = value, true
+		}
+	}
 	if brief.Audience == "" {
-		if value := briefString(brief.ProductInfo["target_customers"]); value != "" {
+		for _, key := range []string{"target_customers", "target_customer"} {
+			value := briefString(brief.ProductInfo[key])
+			if value == "" {
+				continue
+			}
 			brief.Audience, changed = value, true
+			break
 		}
 	}
 	if brief.Market == "" {
@@ -279,8 +337,19 @@ func normalizeBriefSnapshot(brief *domain.Brief) bool {
 		changed = true
 	}
 	if len(brief.RequiredText) == 0 {
-		if values := briefTextValues(brief.ProductInfo["required_packaging_text"]); len(values) > 0 {
-			brief.RequiredText, changed = values, true
+		for _, key := range []string{"required_packaging_text", "mandatory_packaging_text", "mandatory_text"} {
+			if values := briefTextValues(brief.ProductInfo[key]); len(values) > 0 {
+				brief.RequiredText, changed = values, true
+				break
+			}
+		}
+	}
+	if strings.TrimSpace(brief.Material) == "" {
+		for _, key := range []string{"material_requirement", "material"} {
+			if value := briefString(brief.ProductInfo[key]); value != "" {
+				brief.Material, changed = value, true
+				break
+			}
 		}
 	}
 	if len(brief.Constraints) == 0 {

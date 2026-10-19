@@ -59,11 +59,12 @@ type ImageProvider interface {
 }
 
 type ImageRequest struct {
-	Prompt       string   `json:"prompt"`
-	Negative     string   `json:"negative,omitempty"`
-	ReferenceIDs []string `json:"reference_asset_ids,omitempty"`
-	Width        int      `json:"width,omitempty"`
-	Height       int      `json:"height,omitempty"`
+	Prompt          string   `json:"prompt"`
+	Negative        string   `json:"negative,omitempty"`
+	ReferenceIDs    []string `json:"reference_asset_ids,omitempty"`
+	ReferenceImages []string `json:"reference_images,omitempty"`
+	Width           int      `json:"width,omitempty"`
+	Height          int      `json:"height,omitempty"`
 }
 
 type ImageResponse struct {

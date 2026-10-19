@@ -111,7 +111,7 @@ func (w *IntakeWorkflow) Handle(ctx context.Context, task taskqueue.Task) error 
 				protected = appendUnique(protected, assetID)
 			}
 			brief.BrandInfo["protected_logo_asset_ids"] = protected
-			brief.BrandInfo["logo_protection"] = "客户上传的品牌 Logo 必须原样使用，禁止重绘、变形、改色、描边、重新排版、裁切、加滤镜或替换。"
+			brief.BrandInfo["logo_protection"] = "客户上传的品牌标识必须原样使用，禁止重绘、仿制、变形、改色、描边、重新排版、裁切、加滤镜或替换。"
 		}
 	}
 	run, err := w.intake.Run(ctx, agent.RunInput{ProjectID: task.ProjectID, Round: project.CurrentRound, Payload: agentPayload})
@@ -143,9 +143,10 @@ func (w *IntakeWorkflow) Handle(ctx context.Context, task taskqueue.Task) error 
 		return err
 	}
 
-	// Draft always passes through collecting_requirements before it can become
-	// brief_ready, even when the first message contains every required field.
-	if project.Status == domain.ProjectDraft {
+	// Draft and an existing design round both pass through collecting_requirements
+	// before this snapshot can become brief_ready. This lets customers refine
+	// the Brief after reviewing a generated round without an invalid transition.
+	if project.Status == domain.ProjectDraft || project.Status == domain.ProjectAwaitFeedback {
 		if err := w.repo.UpdateStatus(ctx, project.ID, domain.ProjectCollecting); err != nil {
 			return err
 		}
@@ -222,6 +223,42 @@ func applyPatch(brief *domain.Brief, patch map[string]any) {
 func normalizeProductDetails(brief *domain.Brief) {
 	if brief.ProductInfo == nil {
 		return
+	}
+	// Keep flat fields emitted by document/LLM intake aligned with the stable
+	// Brief schema before calculating the completion score.
+	if briefStringValue(brief.ProductInfo, "product_category", "") == "" {
+		if value := briefStringValue(brief.ProductInfo, "category", ""); value != "" {
+			brief.ProductInfo["product_category"] = value
+		}
+	}
+	if brief.Audience == "" {
+		for _, key := range []string{"target_customers", "target_customer"} {
+			if value := briefStringValue(brief.ProductInfo, key, ""); value != "" {
+				brief.Audience = value
+				break
+			}
+		}
+	}
+	if brief.Material == "" {
+		for _, key := range []string{"material_requirement", "material"} {
+			if value := briefStringValue(brief.ProductInfo, key, ""); value != "" {
+				brief.Material = value
+				break
+			}
+		}
+	}
+	if len(brief.RequiredText) == 0 {
+		for _, key := range []string{"required_packaging_text", "mandatory_packaging_text", "mandatory_text"} {
+			if values := toStringsValue(brief.ProductInfo[key]); len(values) > 0 {
+				brief.RequiredText = values
+				break
+			}
+		}
+	}
+	if len(brief.PackageSpec) == 0 {
+		if value, ok := brief.ProductInfo["package_spec"].(map[string]any); ok && len(value) > 0 {
+			brief.PackageSpec = value
+		}
 	}
 	products, ok := brief.ProductInfo["products"].([]any)
 	if !ok || len(products) == 0 {
@@ -327,10 +364,23 @@ func briefStringValue(value map[string]any, key, fallback string) string {
 
 func toStringsValue(value any) []string {
 	values, ok := toStrings(value)
-	if !ok {
-		return nil
+	if ok {
+		return values
 	}
-	return values
+	if items, ok := value.(map[string]any); ok {
+		values := make([]string, 0, len(items))
+		for key, item := range items {
+			text := strings.TrimSpace(fmt.Sprint(item))
+			if text == "" {
+				text = key
+			} else {
+				text = key + "：" + text
+			}
+			values = append(values, text)
+		}
+		return values
+	}
+	return nil
 }
 
 func appendUnique(values []string, additions ...string) []string {

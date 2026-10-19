@@ -44,6 +44,16 @@ type Brief struct {
 	UpdatedAt       time.Time      `json:"updated_at"`
 }
 
+type IntakeSubmission struct {
+	ID             string    `json:"id"`
+	ProjectID      string    `json:"project_id"`
+	TaskID         string    `json:"task_id"`
+	Message        string    `json:"message"`
+	DocumentNames  []string  `json:"document_names,omitempty"`
+	BrandFileNames []string  `json:"brand_file_names,omitempty"`
+	CreatedAt      time.Time `json:"created_at"`
+}
+
 type DesignProposal struct {
 	ID             string         `json:"id"`
 	ProjectID      string         `json:"project_id"`

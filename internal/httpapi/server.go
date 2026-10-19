@@ -153,7 +153,21 @@ func (s *Server) projectRoutes(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusServiceUnavailable, "task_queue_unavailable")
 			return
 		}
+		documentNames, brandFileNames := multipartFileNames(r)
+		if err := s.repo.CreateIntakeSubmission(r.Context(), domain.IntakeSubmission{ID: repository.NewID(), ProjectID: projectID, TaskID: task.ID, Message: message, DocumentNames: documentNames, BrandFileNames: brandFileNames}); err != nil {
+			writeDBError(w, err)
+			return
+		}
 		writeJSON(w, http.StatusAccepted, map[string]any{"task_id": task.ID, "status": taskqueue.Queued, "project_id": projectID})
+		return
+	}
+	if len(parts) == 2 && parts[1] == "intake-submissions" && r.Method == http.MethodGet {
+		submissions, err := s.repo.ListIntakeSubmissions(r.Context(), projectID)
+		if err != nil {
+			writeDBError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, submissions)
 		return
 	}
 	if len(parts) == 2 && parts[1] == "generate" && r.Method == http.MethodPost {
@@ -448,6 +462,21 @@ func (s *Server) parseChatRequest(r *http.Request, projectID string) (string, st
 	return message, documentText, assetIDs, brandAssetIDs, nil
 }
 
+func multipartFileNames(r *http.Request) ([]string, []string) {
+	if r.MultipartForm == nil {
+		return nil, nil
+	}
+	documents := make([]string, 0, len(r.MultipartForm.File["document"]))
+	for _, file := range r.MultipartForm.File["document"] {
+		documents = append(documents, file.Filename)
+	}
+	brands := make([]string, 0, len(r.MultipartForm.File["brand_file"]))
+	for _, file := range r.MultipartForm.File["brand_file"] {
+		brands = append(brands, file.Filename)
+	}
+	return documents, brands
+}
+
 func briefReferenceImageMIME(ext string) (string, bool) {
 	switch strings.ToLower(ext) {
 	case ".png":
@@ -471,11 +500,11 @@ func (s *Server) parseBrandAsset(r *http.Request, projectID string) ([]string, e
 		name := strings.TrimSpace(header.Filename)
 		dot := strings.LastIndex(name, ".")
 		if dot < 0 {
-			return nil, fmt.Errorf("brand_file must be .ai, .eps or .svg")
+			return nil, fmt.Errorf("brand_file must be .ai, .eps, .svg or .png")
 		}
 		ext := strings.ToLower(name[dot:])
-		if ext != ".ai" && ext != ".eps" && ext != ".svg" {
-			return nil, fmt.Errorf("brand_file must be .ai, .eps or .svg")
+		if !isBrandAssetExtension(ext) {
+			return nil, fmt.Errorf("brand_file must be .ai, .eps, .svg or .png")
 		}
 		file, err := header.Open()
 		if err != nil {
@@ -497,6 +526,15 @@ func (s *Server) parseBrandAsset(r *http.Request, projectID string) ([]string, e
 		assetIDs = append(assetIDs, asset.ID)
 	}
 	return assetIDs, nil
+}
+
+func isBrandAssetExtension(ext string) bool {
+	switch strings.ToLower(ext) {
+	case ".ai", ".eps", ".svg", ".png":
+		return true
+	default:
+		return false
+	}
 }
 
 func (s *Server) parseReferenceAssets(r *http.Request, projectID string) ([]string, error) {

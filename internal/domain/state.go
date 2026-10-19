@@ -21,7 +21,10 @@ func CanTransition(from, to ProjectStatus) bool {
 	case ProjectGenerating:
 		return to == ProjectAwaitFeedback
 	case ProjectAwaitFeedback:
-		return to == ProjectRevising || to == ProjectApproved
+		// A customer may continue the requirements wizard after reviewing a
+		// generated round. Re-enter collection before making the Brief ready
+		// again so stale proposals are not treated as the current design.
+		return to == ProjectCollecting || to == ProjectRevising || to == ProjectApproved
 	case ProjectRevising:
 		return to == ProjectAwaitFeedback
 	case ProjectApproved:

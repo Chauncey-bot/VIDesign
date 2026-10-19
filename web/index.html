@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Packaging AI · 包装设计工作台</title>
-  <link rel="stylesheet" href="/styles.css?v=20261017-logo-lock">
+  <link rel="stylesheet" href="/styles.css?v=20261018-auth-history">
 </head>
 <body>
   <header class="topbar">
@@ -69,10 +69,11 @@
             <div class="wizard-steps" id="researchSteps"></div>
             <div id="researchQuestions" class="research-questions"></div>
             <textarea id="researchAnswer" rows="5" placeholder="请尽量完整填写，Word 文档或参考设计稿可在第一步上传"></textarea>
-            <div id="researchUpload" class="research-upload"><label for="researchDocumentInput" class="drop-zone"><strong>＋ 添加 Word 需求文档 / 参考设计稿（可多次添加）</strong><span>支持 .docx、PNG、JPG、JPEG、WEBP，可多次选择或拖拽</span></label><input id="researchDocumentInput" type="file" multiple accept=".docx,.png,.jpg,.jpeg,.webp,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/png,image/jpeg,image/webp"><span id="researchDocumentName"></span><label for="brandFileInput" class="brand-file-label brand-drop-zone"><strong>＋ 添加品牌 Logo 源文件（可多次添加）</strong><span>支持 .ai / .eps / .svg；上传后 Logo 原样保留，禁止调整</span></label><input id="brandFileInput" type="file" multiple accept=".ai,.eps,.svg,application/postscript,image/svg+xml"><span id="brandFileName"></span></div>
+            <div id="researchUpload" class="research-upload"><label for="researchDocumentInput" class="drop-zone"><strong>＋ 添加 Word 需求文档 / 参考设计稿（可多次添加）</strong><span>支持 .docx、PNG、JPG、JPEG、WEBP，可多次选择或拖拽</span></label><input id="researchDocumentInput" type="file" multiple accept=".docx,.png,.jpg,.jpeg,.webp,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/png,image/jpeg,image/webp"><span id="researchDocumentName"></span><label for="brandFileInput" class="brand-file-label brand-drop-zone"><strong>＋ 添加品牌 Logo 源文件（可多次添加）</strong><span>支持 .ai / .eps / .svg / .png；上传后 Logo 原样保留，禁止调整</span></label><input id="brandFileInput" type="file" multiple accept=".ai,.eps,.svg,.png,application/postscript,image/svg+xml,image/png"><span id="brandFileName"></span></div>
             <div id="researchTaskProgress" class="research-task-progress hidden"><span class="progress-spinner"></span><strong id="researchTaskProgressText">正在提交本步…</strong></div>
             <div class="wizard-footer"><span id="researchProgressText" class="muted">每一步提交后，Agent 会整理并保存 Brief。</span><button id="researchNextBtn" class="primary" type="button">提交本步并继续 <span>→</span></button></div>
           </div>
+          <details id="researchHistoryDetails" class="research-history card"><summary>已提交的需求记录</summary><div id="researchHistoryList" class="research-history-list"><div class="muted">还没有提交记录。</div></div></details>
           <div class="intake-grid legacy-intake">
             <div class="chat-card card">
               <div class="card-header"><div><div class="eyebrow">AI 需求采集</div><h2>把你的想法告诉我</h2></div><span class="live-label"><i></i> Agent 在线</span></div>
@@ -114,6 +115,6 @@
     </section>
   </main>
   <div id="toast" class="toast"></div>
-  <script src="/app.js?v=20261018-brief-image-upload"></script>
+  <script src="/app.js?v=20261018-packaging-final"></script>
 </body>
 </html>

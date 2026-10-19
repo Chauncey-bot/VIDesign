@@ -21,3 +21,16 @@ func TestBriefReferenceImageMIME(t *testing.T) {
 		t.Fatal("PDF must not be treated as an image reference in the research upload")
 	}
 }
+
+func TestBrandAssetExtensionAllowsPNG(t *testing.T) {
+	for _, ext := range []string{".ai", ".eps", ".svg", ".png"} {
+		if !isBrandAssetExtension(ext) {
+			t.Fatalf("brand extension %q was rejected", ext)
+		}
+	}
+	for _, ext := range []string{".jpg", ".pdf", ".txt"} {
+		if isBrandAssetExtension(ext) {
+			t.Fatalf("non-brand extension %q was accepted", ext)
+		}
+	}
+}

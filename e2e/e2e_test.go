@@ -52,7 +52,7 @@ func TestProjectChatPersistsBrief(t *testing.T) {
 	var task struct {
 		TaskID string `json:"task_id"`
 	}
-	requestMultipartFiles(t, client, baseURL+"/api/v1/projects/"+project.ID+"/chat", "做一套年轻人红茶礼盒包装", [][]byte{makeDocx(t), makeDocx(t)}, []namedFile{{name: "brand-one.ai", data: []byte("AI-ONE")}, {name: "brand-two.svg", data: []byte("<svg></svg>")}}, &task)
+	requestMultipartFiles(t, client, baseURL+"/api/v1/projects/"+project.ID+"/chat", "做一套年轻人红茶礼盒包装", [][]byte{makeDocx(t), makeDocx(t)}, []namedFile{{name: "brand-one.svg", data: validLogoSVG("#b5302e")}, {name: "brand-two.svg", data: validLogoSVG("#c58d42")}}, &task)
 	if task.TaskID == "" {
 		t.Fatal("task id is empty")
 	}
@@ -100,11 +100,16 @@ func TestProjectChatPersistsBrief(t *testing.T) {
 		Assets      []struct {
 			ID         string `json:"id"`
 			StorageURL string `json:"storage_url"`
+			Prompt     string `json:"prompt"`
+			Provider   string `json:"provider"`
 		} `json:"assets"`
 	}
 	requestJSON(t, client, http.MethodGet, baseURL+"/api/v1/projects/"+project.ID+"/proposals", nil, &proposals)
 	if len(proposals) != 3 || proposals[0].Round != 1 || proposals[0].ProductName != "松萝茶·山岚玉青" || proposals[1].ProductName != "松萝茶·山岚玉青" || proposals[2].ProductName != "松萝茶·山岚玉青" || len(proposals[0].Assets) == 0 {
 		t.Fatalf("unexpected first round proposals: %#v", proposals)
+	}
+	if !bytes.Contains([]byte(proposals[0].Assets[0].Provider), []byte("logo-in-generation")) || !bytes.Contains([]byte(proposals[0].Assets[0].Prompt), []byte("authoritative visual reference")) || !bytes.Contains([]byte(proposals[0].Assets[0].Prompt), []byte("specified physical finish")) {
+		t.Fatalf("protected Logo path was not applied: provider=%q prompt=%q", proposals[0].Assets[0].Provider, proposals[0].Assets[0].Prompt)
 	}
 	var fusion struct {
 		ID                string   `json:"id"`
@@ -171,6 +176,10 @@ func TestProjectChatPersistsBrief(t *testing.T) {
 	if len(bundle) < 4 || string(bundle[:4]) != "PK\x03\x04" {
 		t.Fatalf("invalid bundle export header: %q", bundle[:min(4, len(bundle))])
 	}
+}
+
+func validLogoSVG(color string) []byte {
+	return []byte(fmt.Sprintf(`<svg xmlns="http://www.w3.org/2000/svg" width="240" height="120" viewBox="0 0 240 120"><rect width="240" height="120" fill="none"/><rect x="16" y="12" width="72" height="96" fill="%s"/><path d="M28 28h48v12H40v16h28v12H40v20h36v12H28z" fill="#fff"/><path d="M112 45h112v10H112zM112 75h82v10H112z" fill="#222"/></svg>`, color))
 }
 
 func pollSucceeded(t *testing.T, client *http.Client, baseURL, taskID string) {

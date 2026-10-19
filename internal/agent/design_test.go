@@ -2,9 +2,18 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 )
+
+func TestProposalCountAcceptsJSONNumbers(t *testing.T) {
+	for _, value := range []any{6, float64(6), json.Number("6")} {
+		if got := proposalCount(value); got != 6 {
+			t.Fatalf("proposal count for %T = %d", value, got)
+		}
+	}
+}
 
 type fusionTestProvider struct{}
 
@@ -66,10 +75,29 @@ func TestLLMConceptLocksUploadedBrandLogo(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(provider.request.Messages[0].Content, "禁止重绘") || !strings.Contains(provider.request.Messages[0].Content, "原样使用") {
+	if !strings.Contains(provider.request.Messages[0].Content, "权威参考图") || !strings.Contains(provider.request.Messages[0].Content, "真实包装实体表面") {
 		t.Fatalf("logo protection rule missing from concept request: %s", provider.request.Messages[0].Content)
 	}
-	if !strings.Contains(provider.request.SystemPrompt, "禁止对 Logo 做任何调整") {
+	if strings.Contains(provider.request.SystemPrompt, "生成后合成") || !strings.Contains(provider.request.SystemPrompt, "包装形态") || !strings.Contains(provider.request.SystemPrompt, "完整包装组合") {
 		t.Fatalf("logo protection rule missing from system prompt: %s", provider.request.SystemPrompt)
+	}
+}
+
+func TestBrandMarkRuleIsIndustryAgnostic(t *testing.T) {
+	for _, phrase := range []string{
+		"最终展示物的真实可见表面",
+		"平面或曲面",
+		"材质纹理",
+		"粗糙度",
+		"悬浮图形",
+	} {
+		if !strings.Contains(genericBrandMarkRule, phrase) {
+			t.Fatalf("generic brand mark rule missing %q: %s", phrase, genericBrandMarkRule)
+		}
+	}
+	for _, industrySpecific := range []string{"盒面", "瓶身", "罐身", "袋面"} {
+		if strings.Contains(genericBrandMarkRule, industrySpecific) {
+			t.Fatalf("generic brand mark rule contains package-specific wording %q: %s", industrySpecific, genericBrandMarkRule)
+		}
 	}
 }

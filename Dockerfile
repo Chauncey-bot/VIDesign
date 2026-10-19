@@ -8,6 +8,7 @@ COPY . .
 RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags='-s -w' -o /out/packaging-ai ./cmd/server
 
 FROM alpine:3.20
+RUN apk add --no-cache poppler-utils rsvg-convert
 RUN addgroup -S app && adduser -S -G app app
 WORKDIR /app
 COPY --from=builder /out/packaging-ai /app/packaging-ai
